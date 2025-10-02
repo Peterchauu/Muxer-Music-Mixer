@@ -1,0 +1,25 @@
+.app {
+    display: flex;
+    min-height: 100vh;
+    background: #121212;
+    color:white
+}
+
+.sidebar {
+    width: 220px;
+    background: #181818;
+    padding: 1rem;
+}
+
+.player-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #282828;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-sizing: border-box;
+}
