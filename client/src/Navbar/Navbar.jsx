@@ -1,10 +1,11 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom"
 import About from "../WebPages/About.jsx"
-import HomePage from "../WebPages/HomePage.jsx"
 import MusicMixer from "../WebPages/MusicMixer.jsx"
 import SignIn from "../WebPages/SignIn.jsx"
 import Register from "../WebPages/Register.jsx"
 import musicIcon from '../assets/music-Icon.svg'
+
 const Navbar = () => {
     return (
         <Router>
@@ -14,10 +15,8 @@ const Navbar = () => {
                     <div>
                         <a href="#" className="font-semibold font-mono">
                         <ul className="flex space-x-10">
-                            <li><Link to="/" className="font-sans hover:text-blue-500" href="#home">Home</Link></li>
+                            <li><Link to="/" className="font-sans hover:text-blue-500" href="#home">Music Mixer</Link></li>
                             <li><Link to="/About" className="font-sans hover:text-blue-500" href="#pg1">About</Link></li>
-                            <li><Link to="/Music Mixer" className="font-sans hover:text-blue-500" href="#pg2">Music Mixer</Link></li>
-
                         </ul>
                     </a>
                     </div>
@@ -32,13 +31,12 @@ const Navbar = () => {
                 </div>
             </nav>
             <Routes>
-                <Route path="/" element={<HomePage/>}/>
+                <Route path="/" element={<MusicMixer/>}/>
                 <Route path="/About" element={<About/>}/>
-                <Route path="/Music Mixer" element={<MusicMixer/>}/>
                 <Route path="/Sign In" element={<SignIn/>}/>
                 <Route path="/Register" element={<Register/>}/>
             </Routes>
-    </Router>
+        </Router>
     )
 }
 

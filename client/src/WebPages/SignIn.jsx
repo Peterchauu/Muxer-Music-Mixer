@@ -1,4 +1,8 @@
+//Requirement 4
+
 import { useState } from "react"
+
+// Sign-in webpage with input form fields assuming user already has a account, will authenticate with firebase
 
 function SignIn () {
     const [email, setEmail] = useState("")

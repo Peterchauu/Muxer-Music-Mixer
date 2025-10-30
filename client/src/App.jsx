@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import React from 'react'
+import { Routes, Route } from 'react-router-dom';
 import Navbar from './Navbar/Navbar.jsx'
 import MusicBar from './MusicBar/MusicBar.jsx'
+import { AudioProvider } from './context/AudioContext';
+import MusicMixer from './WebPages/MusicMixer.jsx'
+import About from './WebPages/About.jsx'
+import SignIn from './WebPages/SignIn.jsx'
+import Register from './WebPages/Register.jsx'
 
 function App() {
-  const [isPlaying, setIsPlaying] = useState(true);
-  
   return (
-    <div className="flex flex-col min-h-screen">
-      {isPlaying && <MusicBar />}
-      <Navbar />
-      <main className="flex-1">
-      </main>
-    </div>
+    <AudioProvider>
+          <Navbar />
+          <MusicBar />
+    </AudioProvider>
   )
 }
 

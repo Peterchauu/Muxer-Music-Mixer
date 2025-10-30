@@ -6,8 +6,9 @@ function Register () {
     const [firstName, setFirstName] = useState("")
     const [lastName, setLastName] = useState("")
     const [dateOfBirth, setDateofBirth] = useState("")
-    //const [gender, setGender] = useState("")
+    
 
+    // Register page with the input form fields that allow creation of a new user account with their information
     const handleSubmit = (e) => {
         e.preventDefault()
         console.log("Registration attempt with: ", {email, password, firstName, lastName, dateOfBirth, gender})
