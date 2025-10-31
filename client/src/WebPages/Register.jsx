@@ -1,4 +1,7 @@
-import { use, useState } from "react"
+import { useState } from "react"
+
+
+// Requirement 2 fulfilled
 
 function Register () {
     const [email, setEmail] = useState("")
@@ -13,6 +16,9 @@ function Register () {
         e.preventDefault()
         console.log("Registration attempt with: ", {email, password, firstName, lastName, dateOfBirth, gender})
     }
+
+
+    {/* Requirement 4 fulfilled (2/2) */}
 
     return (
         <div className="flex justify-center items-center min-h-screen bg-gray-100">
