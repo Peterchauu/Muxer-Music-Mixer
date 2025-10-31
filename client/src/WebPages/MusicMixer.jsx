@@ -19,14 +19,14 @@ function MusicMixer() {
 
   const { currentTrack, isPlaying, playTrack } = useAudio();
 
-  const fetchTracks = async (page) => {
-      if (!searchQuery.trim()) return;
+  const fetchTracks = async (page, query = searchQuery) => {
+      if (!query.trim()) return;
 
       setIsLoading(true);
       setError(null);
 
       try {
-          const data = await musicService.searchTracks(searchQuery, page);
+          const data = await musicService.searchTracks(query, page);
 
           if (!data.data || data.data.length === 0) {
               setError('No results found :(');
@@ -51,7 +51,7 @@ function MusicMixer() {
       setSearchQuery(query);
       setCurrentPage(1);
       setSearchParams({ q: query, page: '1' });
-      await fetchTracks(1);
+      await fetchTracks(1, query);
   };
 
   const handlePrevPage = async () => {
