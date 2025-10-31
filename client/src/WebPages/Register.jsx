@@ -20,27 +20,27 @@ function Register () {
                 <h2 className="text-xl font-bold mb-4 text-center">Register</h2>
                 <label className=" block mb-2 text-center">
                     Email
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded mt-1" required>
+                    <input type="email" placeholder="example@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded mt-1" required>
                     </input>
                 </label>
                 <label className="block mb-4 text-center">
                     Password
-                    <input type="password" value= {password} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 round mt-1" required>
+                    <input type="password" placeholder="********" value= {password} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 round mt-1" required>
                     </input>
                 </label>
-                <label className="block mb-6 text-center">
+                <label className="block mb-4 text-center">
                     First Name
-                    <input type="first name text-center" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full border p-2 round mt-1" required>
+                    <input type="first name text-center" placeholder="Bobbert" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full border p-2 round mt-1" required>
                     </input>
                 </label>
-                <label className="block mb-8 text-center">
+                <label className="block mb-4 text-center">
                     Last Name
-                    <input type="last name text-center" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full border p-2 round mt-1" required>
+                    <input type="last name text-center" placeholder="Bobbertson" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full border p-2 round mt-1" required>
                     </input>
                 </label>
-                <label className="block mb-10 text-center">
+                <label className="block mb-4 text-center">
                     Date of Birth
-                    <input type="date of birth" value={dateOfBirth} onChange={(e)=>setDateofBirth(e.target.value)} className="w-full border p-2 round mt-1 required:">
+                    <input type="date of birth" value={dateOfBirth} placeholder="01/01/2025" onChange={(e)=>setDateofBirth(e.target.value)} className="w-full border p-2 round mt-1 required:">
                     </input>
                 </label>
                 <button type="submit" className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">

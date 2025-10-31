@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import deezer
 
+import uvicorn
 app = FastAPI()
 
 # CORS configuration
@@ -17,4 +18,4 @@ app.add_middleware(
 app.include_router(deezer.router, prefix="/api/deezer", tags=["deezer"])
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8080)
+    uvicorn.run(debug=True, port=8080)

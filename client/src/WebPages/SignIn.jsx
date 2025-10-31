@@ -19,12 +19,12 @@ function SignIn () {
                 <h2 className="text-xl font-bold mb-4 text-center">Sign In</h2>
                 <label className="block mb-2 text-center">
                     Email
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded mt-1" required>
+                    <input type="email" placeholder="example@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded mt-1" required>
                     </input>
                 </label>
                 <label className="block mb-4 text-center">
                     Password
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border p-2 mt-1" required>
+                    <input type="password" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border p-2 mt-1" required>
                     </input>
                 </label>
                 <button type="submit" className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
