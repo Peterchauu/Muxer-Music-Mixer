@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from typing import Optional
 from ..services.deezer_service import DeezerService
 
 router = APIRouter()
