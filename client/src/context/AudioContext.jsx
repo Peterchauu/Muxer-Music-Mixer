@@ -10,10 +10,7 @@ export function AudioProvider({ children }) {
     const [duration, setDuration] = useState(0);
     const audioRef = useRef(new Audio());
 
-    // Debug log
-    useEffect(() => {
-        console.log('Audio Context State:', { currentTrack, isPlaying, volume });
-    }, [currentTrack, isPlaying, volume]);
+
 
     useEffect(() => {
         audioRef.current.volume = volume;

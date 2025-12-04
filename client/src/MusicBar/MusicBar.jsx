@@ -1,13 +1,11 @@
-//Requirement 17
-
-import React, { useCallback, useEffect } from 'react';
 import { useAudio } from '../context/AudioContext';
 import reverseIcon from '../assets/backward-solid-full.svg'
 import playIcon from '../assets/play-solid-full.svg'
 import pauseIcon from '../assets/pause-solid-full.svg'
 import forwardIcon from '../assets/forward-solid-full.svg'
 
-// Music bar that displays a song icon as well as the skip/pause/play
+
+// Requirement 17 fulfilled
 
 function MusicBar() {
     const { 
@@ -21,16 +19,12 @@ function MusicBar() {
         handleSeek
     } = useAudio();
 
-    useEffect(() => {
-    }, [currentTrack, isPlaying, volume]);
-
     const togglePlayPause = () => {
         playTrack(currentTrack);
     };
 
     const handleProgressClick = (e) => {
         if (!currentTrack) return;
-    
         const progressBar = e.currentTarget;
         const rect = progressBar.getBoundingClientRect();
         const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -56,21 +50,28 @@ function MusicBar() {
                 >
                     {/* background bar filler to distinguish progress bar from background */}
                     <div className="absolute bottom-0 left-0 right-0 h-2 
-                                   group-hover:h-4 group-hover:-translate-y+3
-                                   bg-gray-700 transition-all duration-200"
+                                   group-hover:h-4 group-hover:-translate-y-1
+                                   bg-gray-700 transition-all duration-300 ease-out"
                     />
                     
                     {/* current progress bar styling */}
                     <div 
                         className="absolute bottom-0 left-0 h-2
-                                   group-hover:h-4 group-hover:-translate-y+3
-                                   bg-white group-hover:bg-gray-200 
-                                   transition-all duration-200"
-                        style={{ width: `${(progress / duration) * 100}%` }}
+                                   group-hover:h-4 group-hover:-translate-y-1
+                                   bg-emerald-500 group-hover:bg-emerald-400 
+                                   transition-all duration-200 ease-out"
+                        style={{ 
+                            width: `${(progress / duration) * 100}%`,
+                        }}
                     >
                     </div>
 
-                    <div className="absolute bottom-4 text-xs bg-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ left: `${(progress / duration) * 100}%` }}>
+                    {/* current runtime that follows the progress bar */}
+                    <div className="absolute bottom-4 text-xs bg-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none" 
+                         style={{ 
+                             left: `${(progress / duration) * 100}%`,
+                             transition: 'left 0.1s linear, opacity 0.3s ease-out'
+                         }}>
                         {formatTime(progress)}
                     </div>
                 </div>
