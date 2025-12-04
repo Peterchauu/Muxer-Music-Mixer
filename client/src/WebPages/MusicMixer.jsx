@@ -26,7 +26,8 @@ function MusicMixer() {
   const tracksPerPage = 20;
   const totalPages = Math.ceil(totalTracks / tracksPerPage);
 
-  const { currentTrack, isPlaying, playTrack } = useAudio();
+  // ✅ now also pulling playFromQueue for queue-based playback
+  const { currentTrack, isPlaying, playTrack, playFromQueue } = useAudio();
 
 
   // different sort scenarios 
@@ -43,7 +44,6 @@ function MusicMixer() {
         return sorted.sort((a, b) => a.title.localeCompare(b.title));
       case 'artist-asc':
         return sorted.sort((a, b) => a.artist.name.localeCompare(b.artist.name));
-
 
       default:
         return sorted;
@@ -282,7 +282,6 @@ function MusicMixer() {
             currentTrack ? 'pb-[160px]' : 'pb-4'
         }`}>
 
-
             {/* Requirement 7 fulfilled*/}
 
             {/* search bar */}
@@ -301,8 +300,6 @@ function MusicMixer() {
                   />
                 </form>
                 
-
-
                 {/* Requirement 8 fulfilled */}
 
                 {/* sort filter dropdown menu */}
@@ -362,9 +359,6 @@ function MusicMixer() {
               </div>
             )}
 
-
-
-
             {/* Requirment 9 fulfilled */}
 
             {/* song grid layout */}
@@ -385,9 +379,14 @@ function MusicMixer() {
                         className="w-full h-full object-cover"
                       />
                       <button
-                        onClick={() => playTrack(track)}
+                        // ✅ use queue-based playback so next/prev work through this list
+                        onClick={() => playFromQueue(tracks, index)}
                         className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity duration-400">
-                        {currentTrack?.id === track.id && isPlaying ? (<img className="invert w-10" src={pauseIcon}></img>) : (<img className="invert w-10" src={playIcon}></img>)}
+                        {currentTrack?.id === track.id && isPlaying ? (
+                          <img className="invert w-10" src={pauseIcon}></img>
+                        ) : (
+                          <img className="invert w-10" src={playIcon}></img>
+                        )}
                       </button>
                     </div>
 
@@ -411,8 +410,6 @@ function MusicMixer() {
                 </div>
               )}
             </div>
-
-
 
             {/* Requirement 10 fulfilled */}
 
@@ -454,7 +451,6 @@ function MusicMixer() {
               minWidth: '160px'
             }}
           >
-
 
             {/* Requirement 15 fulfilled (1/2) */}
 

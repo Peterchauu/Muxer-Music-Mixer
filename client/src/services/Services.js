@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api/deezer';
+const API_BASE_URL = 'http://localhost:8080/api/deezer';
 
 export const musicService = {
     searchTracks: async (query, page = 1) => {

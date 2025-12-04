@@ -1,131 +1,125 @@
-import { useAudio } from '../context/AudioContext';
-import reverseIcon from '../assets/backward-solid-full.svg'
-import playIcon from '../assets/play-solid-full.svg'
-import pauseIcon from '../assets/pause-solid-full.svg'
-import forwardIcon from '../assets/forward-solid-full.svg'
-
-
-// Requirement 17 fulfilled
+import { useAudio } from "../context/AudioContext";
+import reverseIcon from "../assets/backward-solid-full.svg";
+import playIcon from "../assets/play-solid-full.svg";
+import pauseIcon from "../assets/pause-solid-full.svg";
+import forwardIcon from "../assets/forward-solid-full.svg";
 
 function MusicBar() {
-    const { 
-        currentTrack, 
-        isPlaying, 
-        playTrack, 
-        volume, 
-        handleVolumeChange,
-        progress,
-        duration,
-        handleSeek
-    } = useAudio();
+  const {
+    currentTrack,
+    isPlaying,
+    playTrack,
+    volume,
+    handleVolumeChange,
+    progress,
+    duration,
+    handleProgressChange,
+    playNext,
+    playPrevious,
+  } = useAudio();
 
-    const togglePlayPause = () => {
-        playTrack(currentTrack);
-    };
+  if (!currentTrack) {
+    // you can return null here if you only want to show the bar when something is playing,
+    // but it looked like you always show it, so we'll keep it visible but "empty"
+  }
 
-    const handleProgressClick = (e) => {
-        if (!currentTrack) return;
-        const progressBar = e.currentTarget;
-        const rect = progressBar.getBoundingClientRect();
-        const percent = ((e.clientX - rect.left) / rect.width) * 100;
-        handleSeek(percent);
-    };
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-black text-white h-24 flex items-center px-6 gap-6 z-20">
+      {/* Track info */}
+      <div className="flex items-center gap-3 w-1/3 min-w-0">
+        {currentTrack?.album?.cover_medium && (
+          <img
+            src={currentTrack.album.cover_medium}
+            alt={currentTrack.title}
+            className="w-14 h-14 rounded object-cover"
+          />
+        )}
+        <div className="truncate">
+          <div className="font-semibold truncate">
+            {currentTrack ? currentTrack.title : "No track selected"}
+          </div>
+          <div className="text-sm text-gray-300 truncate">
+            {currentTrack?.artist?.name || ""}
+          </div>
+        </div>
+      </div>
 
-    if (!currentTrack) return null;
+      {/* Center controls + progress */}
+      <div className="flex flex-col items-center justify-center flex-1">
+        <div className="flex items-center gap-4 mb-2">
+          <button
+            className="h-10 w-10 disabled:opacity-40"
+            onClick={playPrevious}
+            disabled={!currentTrack}
+          >
+            <img className="invert" src={reverseIcon} alt="Previous" />
+          </button>
 
+          <button
+            onClick={() => currentTrack && playTrack(currentTrack)}
+            className="h-10 w-10 disabled:opacity-40"
+            disabled={!currentTrack}
+          >
+            <img
+              className="invert"
+              src={isPlaying ? pauseIcon : playIcon}
+              alt={isPlaying ? "Pause" : "Play"}
+            />
+          </button>
 
-    const formatTime = (time) => {
-        const minutes = Math.floor(time / 60);
-        const seconds = Math.floor(time % 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    };
+          <button
+            className="h-10 w-10 disabled:opacity-40"
+            onClick={playNext}
+            disabled={!currentTrack}
+          >
+            <img className="invert" src={forwardIcon} alt="Next" />
+          </button>
+        </div>
 
-    return (
-        <div className="fixed bottom-0 left-0 right-0 bg-black text-white shadow-lg slide-up z-50">
-            {/* progress bar */}
-            <div className="absolute top-0 left-0 right-0 group">
-                <div 
-                    className="absolute bottom-0 left-0 right-0 cursor-pointer"
-                    onClick={handleProgressClick}
-                >
-                    {/* background bar filler to distinguish progress bar from background */}
-                    <div className="absolute bottom-0 left-0 right-0 h-2 
-                                   group-hover:h-4 group-hover:-translate-y-1
-                                   bg-gray-700 transition-all duration-300 ease-out"
-                    />
-                    
-                    {/* current progress bar styling */}
-                    <div 
-                        className="absolute bottom-0 left-0 h-2
-                                   group-hover:h-4 group-hover:-translate-y-1
-                                   bg-emerald-500 group-hover:bg-emerald-400 
-                                   transition-all duration-200 ease-out"
-                        style={{ 
-                            width: `${(progress / duration) * 100}%`,
-                        }}
-                    >
-                    </div>
+        {/* Progress bar */}
+        <div className="flex items-center gap-3 w-full max-w-xl">
+          <span className="text-xs w-10 text-right">
+            {formatTime(progress)}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            step="0.1"
+            value={duration ? progress : 0}
+            onChange={handleProgressChange}
+            className="flex-1 accent-white"
+          />
+          <span className="text-xs w-10">
+            {formatTime(duration || 0)}
+          </span>
+        </div>
+      </div>
 
-                    {/* current runtime that follows the progress bar */}
-                    <div className="absolute bottom-4 text-xs bg-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none" 
-                         style={{ 
-                             left: `${(progress / duration) * 100}%`,
-                             transition: 'left 0.1s linear, opacity 0.3s ease-out'
-                         }}>
-                        {formatTime(progress)}
-                    </div>
-                </div>
-            </div>
-
-            <div className="container mx-auto px-4 py-3 flex items-center">
-                {/* album cover, song title and artist*/}
-                <div className="flex items-center gap-4 flex-[0.3] min-w-[200px]">
-                    <img 
-                        src={currentTrack.album.cover_small} 
-                        alt={currentTrack.title}
-                        className="w-12 h-12 rounded-md shrink-0"
-                    />
-                    <div className="min-w-0">
-                        <h3 className="font-semibold truncate">{currentTrack.title}</h3>
-                        <p className="text-sm text-gray-400 truncate">{currentTrack.artist.name}</p>
-                    </div>
-
-                    {/* song runtime and duration */}
-                    <div className="text-xs text-gray-400">
-                        {formatTime(progress)} / {formatTime(duration)}
-                    </div>
-                </div>
-
-
-                {/* media controls */}
-                <div className="flex-[0.4] flex justify-center items-center gap-8">
-                    <button className='h-10 w-10'>
-                        <img className='invert' src={reverseIcon}></img>
-                    </button>
-                    <button onClick={togglePlayPause} className='h-10 w-10'>
-                        <img className=' invert' src={isPlaying ? pauseIcon : playIcon}></img>
-                    </button>
-                    <button className='h-10 w-10'>
-                        <img className='invert' src={forwardIcon}></img>
-                    </button>
-                </div>
-
-                {/* volume control */}
-                <div className="flex-[0.3] flex items-center justify-end gap-2 ">
-                    <img></img>
-                    <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={volume}
-                        onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                        className="w-24 accent-white"
-                    />
-                </div>
-            </div>
-        </div> 
-    )
+      {/* Right: volume */}
+      <div className="flex items-center gap-2 w-1/5 justify-end">
+        <span className="text-xs">Vol</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={volume}
+          onChange={handleVolumeChange}
+          className="w-28 accent-white"
+        />
+      </div>
+    </div>
+  );
 }
 
-export default MusicBar
+function formatTime(seconds) {
+  if (!seconds || Number.isNaN(seconds)) return "0:00";
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${minutes}:${secs}`;
+}
+
+export default MusicBar;
