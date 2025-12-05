@@ -1,11 +1,10 @@
 // src/services/Services.js
 import axios from "axios";
 
-const DEEZER_BASE_URL = "http://localhost:8080/api/deezer"; // Adjust if needed
+const DEEZER_BASE_URL = "http://localhost:8080/api/deezer";
 const MIXER_BASE_URL = "http://localhost:8080/api/mixer";
 
 export const musicService = {
-  // Existing search
   searchTracks: async (query, page = 1) => {
     try {
       const response = await axios.get(`${DEEZER_BASE_URL}/search`, {
@@ -18,17 +17,29 @@ export const musicService = {
     }
   },
 
-  // NEW: Call Python backend to split stems
   splitTrack: async (trackUrl) => {
     try {
-      // Req 12 & 20: Sends track to backend for processing
       const response = await axios.post(`${MIXER_BASE_URL}/split`, {
         track_url: trackUrl
       });
-      // Returns { session_id, vocals_url, accompaniment_url }
-      return response.data;
+      return response.data; // Now includes 'bpm'
     } catch (error) {
       console.error("Error splitting track:", error);
+      throw error;
+    }
+  },
+
+  // NEW: Finalize Mix
+  finalizeMix: async (sessionA, sessionB, offsetMs) => {
+    try {
+      const response = await axios.post(`${MIXER_BASE_URL}/finalize`, {
+        session_id_vocals: sessionA,
+        session_id_instr: sessionB,
+        offset_ms: offsetMs
+      });
+      return response.data; // Returns { mix_url, title }
+    } catch (error) {
+      console.error("Error creating mix:", error);
       throw error;
     }
   }

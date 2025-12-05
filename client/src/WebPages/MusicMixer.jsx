@@ -54,8 +54,14 @@ function MusicMixer() {
       setIsProcessingA(true);
       try {
         const stems = await musicService.splitTrack(trackUrl);
-        setMixerSlotA({ ...track, stems });
+        // === CHANGE: Save the BPM from the response ===
+        setMixerSlotA({ ...track, stems, bpm: stems.bpm }); 
+        // ==============================================
         audioVocalRef.current.src = `${SERVER_URL}${stems.vocals_url}`;
+        
+        // If this is the first track loaded, set the Master BPM automatically
+        if (!mixerSlotB) setDetectedBPM(stems.bpm);
+        
       } catch (err) {
         console.error(err);
         showNotification("Failed to split vocals");
@@ -66,8 +72,14 @@ function MusicMixer() {
       setIsProcessingB(true);
       try {
         const stems = await musicService.splitTrack(trackUrl);
-        setMixerSlotB({ ...track, stems });
+        // === CHANGE: Save the BPM from the response ===
+        setMixerSlotB({ ...track, stems, bpm: stems.bpm });
+        // ==============================================
         audioInstrRef.current.src = `${SERVER_URL}${stems.accompaniment_url}`;
+        
+        // If this is the first track loaded, set the Master BPM automatically
+        if (!mixerSlotA) setDetectedBPM(stems.bpm);
+
       } catch (err) {
         console.error(err);
         showNotification("Failed to split instrumental");
@@ -95,9 +107,19 @@ function MusicMixer() {
   };
 
   const handleAutoSync = () => {
-    // Mocking BPM sync (Req 20)
-    setDetectedBPM(128); 
-    showNotification("Tempo synchronized to 128 BPM");
+    if (mixerSlotA && mixerSlotB) {
+        // Get the real BPMs we saved earlier
+        const bpmA = mixerSlotA.bpm || 0;
+        const bpmB = mixerSlotB.bpm || 0;
+        
+        // Calculate average to sync them (simple version)
+        const avgBpm = Math.round((bpmA + bpmB) / 2);
+        
+        setDetectedBPM(avgBpm); 
+        showNotification(`Syncing... Vocals: ${bpmA} vs Instr: ${bpmB} -> ${avgBpm}`);
+    } else {
+        showNotification("Please load songs into both decks first.");
+    }
   };
 
   // --- ORIGINAL HELPER FUNCTIONS ---
@@ -192,6 +214,37 @@ function MusicMixer() {
     setShowContextMenu(false);
   };
 
+  const handleFinalizeMix = async () => {
+    if (!mixerSlotA || !mixerSlotB) {
+      showNotification("Please load both decks first!");
+      return;
+    }
+
+    showNotification("Mixing down... please wait.");
+    
+    try {
+      const result = await musicService.finalizeMix(
+        mixerSlotA.stems.session_id, // Ensure your splitTrack returns session_id inside stems
+        mixerSlotB.stems.session_id,
+        offsetMs
+      );
+      
+      console.log("Mix Created:", result);
+      showNotification("Mix Ready! Downloading...");
+      
+      // Auto-download the file
+      const link = document.createElement('a');
+      link.href = `${SERVER_URL}${result.mix_url}`;
+      link.download = `Muxer_Mashup_${Date.now()}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Add to playlist logic here if you want
+    } catch (err) {
+      showNotification("Failed to create mix.");
+    }
+  };
   // --- EFFECT HOOKS ---
 
   useEffect(() => {
@@ -319,26 +372,26 @@ function MusicMixer() {
                />
             </div>
             
-            <button className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 rounded-full font-bold shadow-lg transition-all">
+            <button onClick={handleFinalizeMix} className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 rounded-full font-bold shadow-lg transition-all">
               FINALIZE MIX
             </button>
           </div>
 
           {/* DECK B: INSTRUMENTAL */}
-          <div className="w-1/3 h-[80%] bg-slate-800 rounded-xl border-2 border-purple-500/30 p-4 flex flex-col relative">
-            <div className="absolute -top-3 right-4 bg-purple-600 px-3 text-xs font-bold rounded">INSTRUMENTAL SOURCE</div>
+          <div className="w-1/3 h-[80%] bg-slate-800 rounded-xl border-2 border-red-500/30 p-4 flex flex-col relative">
+            <div className="absolute -top-3 right-4 bg-red-600 px-3 text-xs font-bold rounded">INSTRUMENTAL SOURCE</div>
             
             {isProcessingB ? (
               <div className="flex-1 flex flex-col items-center justify-center animate-pulse">
-                <span className="text-purple-400">Splitting Stems...</span>
+                <span className="text-red-400">Splitting Stems...</span>
               </div>
             ) : mixerSlotB ? (
               <div className="flex flex-col items-center h-full">
-                 <img src={mixerSlotB.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow shadow-[0_0_30px_rgba(168,85,247,0.5)] mt-4" alt="Album" />
+                 <img src={mixerSlotB.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] mt-4" alt="Album" />
                  <h3 className="mt-6 text-xl font-bold text-center">{mixerSlotB.title}</h3>
                  <p className="text-gray-400">{mixerSlotB.artist.name}</p>
                  <div className="flex gap-1 mt-auto mb-4 h-12 items-end">
-                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-purple-500" style={{height: `${Math.random()*100}%`}}></div>)}
+                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-red-500" style={{height: `${Math.random()*100}%`}}></div>)}
                 </div>
               </div>
             ) : (

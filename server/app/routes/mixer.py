@@ -1,82 +1,145 @@
-# server/app/routes/mixer.py
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from pathlib import Path
 from uuid import uuid4
 import requests
+import librosa # For BPM
+from pydub import AudioSegment # For Mixing
+import numpy as np
 
+# Import Spleeter
 from spleeter.separator import Separator
 
 router = APIRouter()
 
-# Where we'll store temporary audio + stems
-BASE_DIR = Path(__file__).resolve().parent.parent  # .../server/app
+# Setup Directories
+BASE_DIR = Path(__file__).resolve().parent.parent  
 STEMS_DIR = (BASE_DIR / ".." / "temp_stems").resolve()
 STEMS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ---- Request model ----
+# Initialize Spleeter
+try:
+    separator = Separator("spleeter:2stems")
+except Exception as e:
+    print(f"Error initializing Spleeter: {e}")
+    separator = None
 
+# --- REQUEST MODELS ---
 class SplitRequest(BaseModel):
-    track_url: HttpUrl  # Deezer preview URL (or any audio URL for now)
+    track_url: str
 
+class MixRequest(BaseModel):
+    session_id_vocals: str
+    session_id_instr: str
+    offset_ms: int
 
-# ---- Helper to run Spleeter ----
+# --- HELPERS ---
 
-def _process_split(track_url: str) -> dict:
-    """
-    Download the audio file, run Spleeter 2-stem separation,
-    and return relative URLs for the generated stems.
-    """
+def get_bpm(file_path):
+    """Detects BPM using Librosa"""
+    print(f"--- Analyzing BPM for: {file_path} ---")
+    try:
+        # Load audio (only first 60s to save time)
+        y, sr = librosa.load(str(file_path), duration=60)
+        
+        # Calculate onset strength
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        
+        # Estimate tempo
+        # Librosa 0.9.2 returns a tuple: (tempo, beats)
+        tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+        
+        print(f"--- SUCCESS: Found BPM {tempo} ---")
+        return float(tempo)
+    except Exception as e:
+        print(f"!!! BPM ERROR: {e}")
+        # If the error is about 'backend', it means FFmpeg is missing
+        return 0
+
+# --- ROUTES ---
+
+@router.post("/split")
+async def split_track(body: SplitRequest):
+    if separator is None:
+        raise HTTPException(status_code=500, detail="Spleeter not initialized")
+
     session_id = uuid4().hex
-    input_path = STEMS_DIR / f"{session_id}.mp3"
-    output_dir = STEMS_DIR / session_id
-    output_dir.mkdir(parents=True, exist_ok=True)
+    session_dir = STEMS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    
+    input_path = session_dir / "source.mp3"
 
-    # 1) Download audio
+    # 1. Download
     try:
-        resp = requests.get(track_url, timeout=30)
+        resp = requests.get(body.track_url, timeout=30)
         resp.raise_for_status()
+        input_path.write_bytes(resp.content)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download audio: {e}")
+        raise HTTPException(status_code=400, detail=f"Download failed: {e}")
 
-    input_path.write_bytes(resp.content)
+    # 2. Get BPM (Real Analysis!)
+    bpm = get_bpm(input_path)
 
-    # 2) Run Spleeter (2 stems: vocals + accompaniment)
+    # 3. Spleeter Split
     try:
-        separator = Separator("spleeter:2stems")
-        separator.separate_to_file(str(input_path), str(output_dir))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Spleeter processing error: {e}")
-
-    # Spleeter creates: output_dir / <filename> / vocals.wav, accompaniment.wav
-    # Because we used "<session_id>.mp3", Spleeter makes a folder named "<session_id>"
-    stems_folder = output_dir / session_id
-
-    vocals_path = stems_folder / "vocals.wav"
-    accomp_path = stems_folder / "accompaniment.wav"
-
-    if not vocals_path.exists() or not accomp_path.exists():
-        raise HTTPException(
-            status_code=500,
-            detail="Expected stem files were not created by Spleeter.",
+        separator.separate_to_file(
+            str(input_path),
+            str(session_dir),
+            filename_format="{instrument}.{codec}",
+            synchronous=True
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Spleeter error: {e}")
 
-    # These URLs will be served by StaticFiles in main.py (mounted at /stems)
     return {
         "session_id": session_id,
+        "bpm": round(bpm), # Return real BPM
         "vocals_url": f"/stems/{session_id}/vocals.wav",
         "accompaniment_url": f"/stems/{session_id}/accompaniment.wav",
     }
 
+@router.post("/finalize")
+async def finalize_mix(body: MixRequest):
+    """Merges Vocal and Instrumental with Offset"""
+    try:
+        # Paths
+        vocal_path = STEMS_DIR / body.session_id_vocals / "vocals.wav"
+        instr_path = STEMS_DIR / body.session_id_instr / "accompaniment.wav"
 
-# ---- API route ----
+        if not vocal_path.exists() or not instr_path.exists():
+            raise HTTPException(status_code=404, detail="Source stems not found")
 
-@router.post("/split")
-async def split_track(body: SplitRequest):
-    """
-    Split a track into vocals + accompaniment using Spleeter.
-    Returns URLs pointing to the generated stem files.
-    """
-    result = _process_split(str(body.track_url))
-    return result
+        # Load Audio (Pydub)
+        vocal_audio = AudioSegment.from_wav(str(vocal_path))
+        instr_audio = AudioSegment.from_wav(str(instr_path))
+
+        # Apply Offset (Add silence to the START of the late track)
+        if body.offset_ms > 0:
+            # Vocals are late (Slide Right) -> Add silence to Vocals
+            silence = AudioSegment.silent(duration=body.offset_ms)
+            vocal_audio = silence + vocal_audio
+        elif body.offset_ms < 0:
+            # Instr is late (Slide Left) -> Add silence to Instr
+            silence = AudioSegment.silent(duration=abs(body.offset_ms))
+            instr_audio = silence + instr_audio
+
+        # Overlay (Mix)
+        final_mix = vocal_audio.overlay(instr_audio)
+
+        # Save to new file
+        mix_id = uuid4().hex
+        output_dir = STEMS_DIR / "mixes"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{mix_id}.mp3"
+        
+        final_mix.export(str(output_path), format="mp3")
+
+        return {
+            "message": "Mix created successfully",
+            "mix_url": f"/stems/mixes/{mix_id}.mp3",
+            "title": f"Mashup {mix_id[:6]}"
+        }
+
+    except Exception as e:
+        print(f"Mixing error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
