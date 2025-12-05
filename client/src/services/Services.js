@@ -1,26 +1,35 @@
-const API_BASE_URL = 'http://localhost:8080/api/deezer';
+// src/services/Services.js
+import axios from "axios";
+
+const DEEZER_BASE_URL = "http://localhost:8080/api/deezer"; // Adjust if needed
+const MIXER_BASE_URL = "http://localhost:8080/api/mixer";
 
 export const musicService = {
-    searchTracks: async (query, page = 1) => {
-        const url = `${API_BASE_URL}/search?query=${encodeURIComponent(query)}&page=${page}`;
-        console.log('Making request to:', url);
-        
-        try {
-            const response = await fetch(url);
-            
-            console.log('Response status:', response.status);
-            console.log('Response ok:', response.ok);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            console.log('Response data:', data);
-            return data;
-        } catch (error) {
-            console.error('Service error:', error);
-            throw error;
-        }
+  // Existing search
+  searchTracks: async (query, page = 1) => {
+    try {
+      const response = await axios.get(`${DEEZER_BASE_URL}/search`, {
+        params: { query, page },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error searching tracks:", error);
+      throw error;
     }
+  },
+
+  // NEW: Call Python backend to split stems
+  splitTrack: async (trackUrl) => {
+    try {
+      // Req 12 & 20: Sends track to backend for processing
+      const response = await axios.post(`${MIXER_BASE_URL}/split`, {
+        track_url: trackUrl
+      });
+      // Returns { session_id, vocals_url, accompaniment_url }
+      return response.data;
+    } catch (error) {
+      console.error("Error splitting track:", error);
+      throw error;
+    }
+  }
 };
