@@ -1,81 +1,60 @@
-// src/services/likeService.js
+import { ref, set, remove, get, child } from "firebase/database";
 import { db } from "./firebaseInit";
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  getDocs, 
-  query, 
-  where 
-} from "firebase/firestore";
 
 export const likeService = {
-  // Like a track
+  // Save a song to the user's "likes" node
+  // structure: users/{userId}/likes/{trackId}
   likeTrack: async (userId, track) => {
     try {
-      const likeRef = doc(db, "likes", `${userId}_${track.id}`);
-      const likeData = {
-        userId,
-        trackId: track.id,
+      const likeRef = ref(db, `users/${userId}/likes/${track.id}`);
+      
+      // We save just enough info to display it in a list later
+      await set(likeRef, {
+        id: track.id,
         title: track.title,
         artist: track.artist.name,
-        albumCover: track.album.cover_medium,
+        album: {
+            cover_medium: track.album.cover_medium,
+            cover_small: track.album.cover_small || track.album.cover_medium
+        },
         preview: track.preview,
-        duration: track.duration,
-        likedAt: new Date().toISOString()
-      };
-      await setDoc(likeRef, likeData);
+        savedAt: Date.now()
+      });
+      console.log(`Liked track ${track.id}`);
     } catch (error) {
       console.error("Error liking track:", error);
       throw error;
     }
   },
 
-  // Unlike a track
+  // Remove the specific track ID
   unlikeTrack: async (userId, trackId) => {
     try {
-      const likeRef = doc(db, "likes", `${userId}_${trackId}`);
-      await deleteDoc(likeRef);
+      const likeRef = ref(db, `users/${userId}/likes/${trackId}`);
+      await remove(likeRef);
+      console.log(`Unliked track ${trackId}`);
     } catch (error) {
       console.error("Error unliking track:", error);
       throw error;
     }
   },
 
-  // Get all liked tracks for a user
+  // Get all liked tracks for the user
   getLikedTracks: async (userId) => {
     try {
-      const likesRef = collection(db, "likes");
-      const q = query(likesRef, where("userId", "==", userId));
-      const querySnapshot = await getDocs(q);
+      const dbRef = ref(db);
+      const snapshot = await get(child(dbRef, `users/${userId}/likes`));
       
-      const likedTracks = [];
-      querySnapshot.forEach((doc) => {
-        likedTracks.push(doc.data());
-      });
-      
-      return likedTracks;
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        // Convert the object { id1: {...}, id2: {...} } into an array
+        return Object.values(data);
+      } else {
+        return [];
+      }
     } catch (error) {
       console.error("Error fetching liked tracks:", error);
-      throw error;
-    }
-  },
-
-  // Check if a track is liked
-  isTrackLiked: async (userId, trackId) => {
-    try {
-      const likesRef = collection(db, "likes");
-      const q = query(
-        likesRef, 
-        where("userId", "==", userId),
-        where("trackId", "==", trackId)
-      );
-      const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
-    } catch (error) {
-      console.error("Error checking if track is liked:", error);
-      return false;
+      return [];
     }
   }
 };
