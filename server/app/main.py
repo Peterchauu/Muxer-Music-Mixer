@@ -7,6 +7,7 @@ from app.routes import deezer, mixer
 
 import uvicorn
 from pathlib import Path
+from multiprocessing import freeze_support
 
 BASE_DIR = Path(__file__).resolve().parent
 STEMS_DIR = (BASE_DIR / ".." / "temp_stems").resolve()
@@ -41,4 +42,5 @@ app.mount("/stems", StaticFiles(directory=STEMS_DIR), name="stems")
 
 
 if __name__ == "__main__":
+    freeze_support()  # Required for Windows multiprocessing (Spleeter/TensorFlow)
     uvicorn.run("app.main:app", host="127.0.0.1", port=8080, reload=True)

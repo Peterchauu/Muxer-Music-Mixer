@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { musicService } from '../services/Services';
+import { likeService } from '../services/likeService';
 import { useAudio } from '../context/AudioContext';
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
@@ -22,13 +23,13 @@ function MusicMixer() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
 
-  // These were missing in your previous attempt causing the ReferenceError:
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [playlists, setPlaylists] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [likedTracks, setLikedTracks] = useState([]);
 
   const tracksPerPage = 20;
   const totalPages = Math.ceil(totalTracks / tracksPerPage);
@@ -42,11 +43,14 @@ function MusicMixer() {
   const [isProcessingB, setIsProcessingB] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0); 
   const [isMixerPlaying, setIsMixerPlaying] = useState(false);
-  const [detectedBPM, setDetectedBPM] = useState(120);
+  const [detectedBPM, setDetectedBPM] = useState(null);
+  const [bpmMultiplier, setBpmMultiplier] = useState("1x");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Audio Refs for Mixer
-  const audioVocalRef = useRef(new Audio());
-  const audioInstrRef = useRef(new Audio());
+  const audioVocalRef = useRef(null);
+  const audioInstrRef = useRef(null);
+  const delayTimeoutRef = useRef(null); // Track setTimeout for offset delays
 
   // --- MIXER LOGIC ---
 
@@ -56,15 +60,14 @@ function MusicMixer() {
 
     if (slot === 'A') {
       setIsProcessingA(true);
+      // Reset BPM display when loading new stem
+      setDetectedBPM(null);
+      setBpmMultiplier("1x");
       try {
         const stems = await musicService.splitTrack(trackUrl);
-        // === CHANGE: Save the BPM from the response ===
-        setMixerSlotA({ ...track, stems, bpm: stems.bpm }); 
-        // ==============================================
+        setMixerSlotA({ ...track, stems, bpm: stems.bpm });
         audioVocalRef.current.src = `${SERVER_URL}${stems.vocals_url}`;
-        
-        // If this is the first track loaded, set the Master BPM automatically
-        if (!mixerSlotB) setDetectedBPM(stems.bpm);
+        audioVocalRef.current.load();
         
       } catch (err) {
         console.error(err);
@@ -74,15 +77,14 @@ function MusicMixer() {
       }
     } else {
       setIsProcessingB(true);
+      // Reset BPM display when loading new stem
+      setDetectedBPM(null);
+      setBpmMultiplier("1x");
       try {
         const stems = await musicService.splitTrack(trackUrl);
-        // === CHANGE: Save the BPM from the response ===
         setMixerSlotB({ ...track, stems, bpm: stems.bpm });
-        // ==============================================
         audioInstrRef.current.src = `${SERVER_URL}${stems.accompaniment_url}`;
-        
-        // If this is the first track loaded, set the Master BPM automatically
-        if (!mixerSlotA) setDetectedBPM(stems.bpm);
+        audioInstrRef.current.load();
 
       } catch (err) {
         console.error(err);
@@ -95,35 +97,175 @@ function MusicMixer() {
 
   const toggleMixerPlay = () => {
     if (isMixerPlaying) {
+      // Clear any pending delayed play
+      if (delayTimeoutRef.current) {
+        clearTimeout(delayTimeoutRef.current);
+        delayTimeoutRef.current = null;
+      }
+      
       audioVocalRef.current.pause();
       audioInstrRef.current.pause();
       setIsMixerPlaying(false);
     } else {
-      // Handle Offset (Req 11)
-      const vocalDelay = offsetMs > 0 ? offsetMs : 0;
-      const instrDelay = offsetMs < 0 ? Math.abs(offsetMs) : 0;
-
-      setTimeout(() => { audioVocalRef.current.play(); }, vocalDelay);
-      setTimeout(() => { audioInstrRef.current.play(); }, instrDelay);
+      // Pause both tracks first
+      audioVocalRef.current.pause();
+      audioInstrRef.current.pause();
+      
+      // Reset to beginning
+      audioVocalRef.current.currentTime = 0;
+      audioInstrRef.current.currentTime = 0;
+      
+      // Set initial volume to 0 for fade-in effect
+      audioVocalRef.current.volume = 0;
+      audioInstrRef.current.volume = 0;
+      
+      // Fade in function
+      const fadeIn = (audioElement) => {
+        let volume = 0;
+        const fadeInterval = setInterval(() => {
+          if (volume < 1) {
+            volume += 0.1; // Increase by 10% each step
+            audioElement.volume = Math.min(volume, 1);
+          } else {
+            clearInterval(fadeInterval);
+          }
+        }, 50); // Every 50ms, full fade-in takes 500ms
+      };
+      
+      // Apply offset and start playback
+      if (offsetMs > 0) {
+        // Positive offset: instrumental plays LATE
+        // Play vocals normally, delay instrumental using setTimeout
+        audioVocalRef.current.play();
+        fadeIn(audioVocalRef.current);
+        
+        delayTimeoutRef.current = setTimeout(() => {
+          audioInstrRef.current.play();
+          fadeIn(audioInstrRef.current);
+        }, offsetMs);
+      } else if (offsetMs < 0) {
+        // Negative offset: instrumental plays EARLY  
+        // Play instrumental normally, delay vocals using setTimeout
+        audioInstrRef.current.play();
+        fadeIn(audioInstrRef.current);
+        
+        delayTimeoutRef.current = setTimeout(() => {
+          audioVocalRef.current.play();
+          fadeIn(audioVocalRef.current);
+        }, Math.abs(offsetMs));
+      } else {
+        // No offset - play both from beginning
+        audioVocalRef.current.play();
+        audioInstrRef.current.play();
+        fadeIn(audioVocalRef.current);
+        fadeIn(audioInstrRef.current);
+      }
 
       setIsMixerPlaying(true);
     }
   };
 
-  const handleAutoSync = () => {
+  const handleAutoSync = async () => {
     if (mixerSlotA && mixerSlotB) {
-        // Get the real BPMs we saved earlier
-        const bpmA = mixerSlotA.bpm || 0;
-        const bpmB = mixerSlotB.bpm || 0;
+        // Pause playback during sync
+        if (isMixerPlaying) {
+          audioVocalRef.current.pause();
+          audioInstrRef.current.pause();
+          setIsMixerPlaying(false);
+        }
         
-        // Calculate average to sync them (simple version)
-        const avgBpm = Math.round((bpmA + bpmB) / 2);
+        // Show updating status
+        setIsUpdating(true);
         
-        setDetectedBPM(avgBpm); 
-        showNotification(`Syncing... Vocals: ${bpmA} vs Instr: ${bpmB} -> ${avgBpm}`);
+        // Reset both to beginning
+        audioVocalRef.current.currentTime = 0;
+        audioInstrRef.current.currentTime = 0;
+        
+        // Get the real BPMs - A is vocals (stays fixed), B is instrumental (gets adjusted)
+        const bpmVocals = mixerSlotA.bpm || 0;
+        const bpmInstr = mixerSlotB.bpm || 0;
+        
+        // Smart BPM matching: choose between 1x or 2x vocals BPM (whichever is closer)
+        const targetBPM1x = bpmVocals;
+        const targetBPM2x = bpmVocals * 2;
+        const diff1x = Math.abs(bpmInstr - targetBPM1x);
+        const diff2x = Math.abs(bpmInstr - targetBPM2x);
+        
+        const targetBPM = diff1x <= diff2x ? targetBPM1x : targetBPM2x;
+        const multiplier = diff1x <= diff2x ? "1x" : "2x";
+        
+        // Set master BPM to the actual target and store multiplier
+        setDetectedBPM(targetBPM);
+        setBpmMultiplier(multiplier);
+        
+        try {
+          console.log('Adjusting BPM with:', {
+            sessionId: mixerSlotB.stems.session_id,
+            targetBPM: targetBPM,
+            originalBPM: bpmInstr,
+            multiplier: multiplier
+          });
+          
+          // Request server-side BPM adjustment (time-stretching without pitch change)
+          const response = await musicService.adjustBPM(
+            mixerSlotB.stems.session_id,
+            targetBPM,
+            bpmInstr
+          );
+          
+          // Load the adjusted instrumental stem
+          audioInstrRef.current.src = `${SERVER_URL}${response.adjusted_url}`;
+          audioInstrRef.current.load();
+          audioVocalRef.current.playbackRate = 1.0;
+          audioInstrRef.current.playbackRate = 1.0;
+          
+          const difference = Math.abs(targetBPM - bpmInstr);
+          showNotification(`Synced to ${multiplier} vocals (${targetBPM} BPM). Instrumental time-stretched from ${bpmInstr} BPM (Δ${difference})`);
+        } catch (err) {
+          console.error("BPM adjustment failed:", err);
+          console.error("Error details:", err.response?.data);
+          showNotification(`Failed to adjust BPM: ${err.response?.data?.detail || err.message}`);
+        }
+        
+        // Clear updating status
+        setTimeout(() => setIsUpdating(false), 1000);
     } else {
         showNotification("Please load songs into both decks first.");
     }
+  };
+
+  const handleOffsetChange = (newOffset) => {
+    // Pause playback when offset is adjusted
+    if (isMixerPlaying) {
+      audioVocalRef.current.pause();
+      audioInstrRef.current.pause();
+      setIsMixerPlaying(false);
+    }
+    
+    // Show updating status
+    setIsUpdating(true);
+    
+    // Reset both to beginning
+    audioVocalRef.current.currentTime = 0;
+    audioInstrRef.current.currentTime = 0;
+    
+    // Update offset
+    setOffsetMs(newOffset);
+    
+    // Clear updating status
+    setTimeout(() => setIsUpdating(false), 300);
+  };
+
+  // Helper: Calculate ms per beat based on BPM
+  const getBeatInterval = (bpm) => {
+    if (!bpm || bpm === 0) return 500; // Default to 120 BPM (500ms per beat)
+    return (60000 / bpm); // 60,000 ms per minute / BPM = ms per beat
+  };
+
+  // Helper: Get the current beat interval for snapping
+  const getCurrentBeatInterval = () => {
+    const bpm = detectedBPM || 120; // Default to 120 if no BPM set
+    return getBeatInterval(bpm);
   };
 
   // --- ORIGINAL HELPER FUNCTIONS ---
@@ -140,28 +282,28 @@ function MusicMixer() {
     }
   };
 
-  const fetchTracks = useCallback(async (page, query = searchQuery) => {
-      if (!query.trim()) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await musicService.searchTracks(query, page);
-        if (!data.data || data.data.length === 0) {
-          setError('No results found :(');
-          setTracks([]);
-          setTotalTracks(0);
-          return;
-        }
-        const sortedTracks = sortTracks(data.data, sortOption);
-        setTracks(sortedTracks);
-        setTotalTracks(data.total);
-      } catch (err) {
-        console.error('Search Error:', err);
-        setError('Unable to fetch tracks.');
-      } finally {
-        setIsLoading(false);
+  const fetchTracks = async (page, query = searchQuery) => {
+    if (!query.trim()) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await musicService.searchTracks(query, page);
+      if (!data.data || data.data.length === 0) {
+        setError('No results found :(');
+        setTracks([]);
+        setTotalTracks(0);
+        return;
       }
-    }, [searchQuery, sortOption]);
+      const sortedTracks = sortTracks(data.data, sortOption);
+      setTracks(sortedTracks);
+      setTotalTracks(data.total);
+    } catch (err) {
+      console.error('Search Error:', err);
+      setError('Unable to fetch tracks.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -193,6 +335,60 @@ function MusicMixer() {
     setNotification(message);
     setTimeout(() => setNotification(null), 3000);
   };
+
+  const handleLikeToggle = async (e, track) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      showNotification("Please sign in to like songs");
+      return;
+    }
+
+    const isLiked = likedTracks.includes(track.id);
+    
+    // Optimistic update: Update UI immediately
+    if (isLiked) {
+      setLikedTracks(prev => prev.filter(id => id !== track.id));
+      showNotification("Removed from liked songs");
+    } else {
+      setLikedTracks(prev => [...prev, track.id]);
+      showNotification("Added to liked songs");
+    }
+
+    // Background database update
+    try {
+      if (isLiked) {
+        await likeService.unlikeTrack(currentUser.uid, track.id);
+      } else {
+        await likeService.likeTrack(currentUser.uid, track);
+      }
+    } catch (error) {
+      console.error("Error toggling like:", error);
+      // Rollback on error
+      if (isLiked) {
+        setLikedTracks(prev => [...prev, track.id]);
+      } else {
+        setLikedTracks(prev => prev.filter(id => id !== track.id));
+      }
+      showNotification("Failed to update like status");
+    }
+  };
+
+  useEffect(() => {
+    const loadLikedTracks = async () => {
+      if (currentUser) {
+        try {
+          const liked = await likeService.getLikedTracks(currentUser.uid);
+          const likedIds = liked.map(track => track.trackId);
+          setLikedTracks(likedIds);
+        } catch (error) {
+          console.error("Error loading liked tracks:", error);
+        }
+      } else {
+        setLikedTracks([]);
+      }
+    };
+    loadLikedTracks();
+  }, [currentUser]);
 
   const handleRightClick = (e, track) => {
     e.preventDefault();
@@ -233,39 +429,23 @@ function MusicMixer() {
         offsetMs
       );
       
-      // === CREATE MIX TRACK OBJECT ===
-      // This mimics the Deezer structure so Playlists.jsx can read it
       const newMixTrack = {
-        id: `mix_${Date.now()}`, // Unique ID
+        id: `mix_${Date.now()}`,
         title: result.title || `Mashup: ${mixerSlotA.title} x ${mixerSlotB.title}`,
-        artist: { name: currentUser?.displayName || "My Custom Mix" }, // Or current user name
+        artist: { name: currentUser?.displayName || "My Custom Mix" },
         album: { 
-          // Use a placeholder image or the cover of the Vocal track
           cover_small: mixerSlotA.album.cover_small, 
           cover_medium: mixerSlotA.album.cover_medium 
         },
-        duration: 0, // You can calculate this if needed
-        preview: `${SERVER_URL}${result.mix_url}`, // The link to play it
-        isLocalMix: true // Flag to help us identify it later
+        duration: 0,
+        preview: `${SERVER_URL}${result.mix_url}`,
+        isLocalMix: true
       };
 
-      // === REQ 19: Auto-save to Recents ===
+      saveToFinalizedMixes(newMixTrack);
       saveToRecents(newMixTrack);
 
-      // === REQ 16: Visual Indication / Encouragement ===
-      // Instead of just downloading, we select this track 
-      // and open the playlist menu to encourage saving.
-      setSelectedTrack(newMixTrack); 
-      setNotification("Mix saved to Recents! Add to a playlist?");
-      setShowPlaylistMenu(true); // <--- This pops up the "Add to Playlist" menu immediately
-
-      // Auto-download (Optional, keep if you want)
-      //const link = document.createElement('a');
-      //link.href = `${SERVER_URL}${result.mix_url}`;
-      //link.download = `${newMixTrack.title}.mp3`;
-      //document.body.appendChild(link);
-      //link.click();
-      //document.body.removeChild(link);
+      showNotification("Mix finalized and added to 'Finalized Mixes' playlist!");
 
     } catch (err) {
       console.error(err);
@@ -273,53 +453,120 @@ function MusicMixer() {
     }
   };
 
-  // --- HELPER: Save to Recents (Req 19) ---
-  const saveToRecents = (mixTrack) => {
+  const saveToFinalizedMixes = (mixTrack) => {
     try {
-      // 1. Get existing playlists
       const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
       
-      // 2. Find or Create "Recents" playlist
+      let finalizedIdx = existing.findIndex(p => p.name === "Finalized Mixes");
+      let finalizedPlaylist;
+
+      if (finalizedIdx === -1) {
+        finalizedPlaylist = {
+          id: 'playlist_finalized_mixes',
+          name: "Finalized Mixes",
+          icon: null, 
+          tracks: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        existing.push(finalizedPlaylist);
+        finalizedIdx = existing.length - 1;
+      } else {
+        finalizedPlaylist = existing[finalizedIdx];
+      }
+
+      finalizedPlaylist.tracks.unshift(mixTrack);
+      finalizedPlaylist.updatedAt = new Date().toISOString();
+
+      existing[finalizedIdx] = finalizedPlaylist;
+      localStorage.setItem('userPlaylists', JSON.stringify(existing));
+
+      window.dispatchEvent(new CustomEvent('playlistsUpdated', {
+        detail: { playlists: existing }
+      }));
+    } catch (error) {
+      console.error('Error saving to Finalized Mixes:', error);
+    }
+  };
+
+  const saveToRecents = (mixTrack) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+      
       let recentsIdx = existing.findIndex(p => p.name === "Recents");
       let recents;
 
       if (recentsIdx === -1) {
-        // Create it if missing
         recents = {
-          id: 'playlist_recents', // Fixed ID for Recents
+          id: 'playlist_recents',
           name: "Recents",
           icon: null, 
           tracks: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        existing.unshift(recents); // Add to front
+        existing.unshift(recents);
         recentsIdx = 0;
       } else {
         recents = existing[recentsIdx];
       }
 
-      // 3. Add the new mix to the top of Recents
-      // Check for duplicates based on ID
       if (!recents.tracks.some(t => t.id === mixTrack.id)) {
         recents.tracks.unshift(mixTrack);
         recents.updatedAt = new Date().toISOString();
         
-        // Update the array
         existing[recentsIdx] = recents;
-        
-        // 4. Save back to Storage
         localStorage.setItem('userPlaylists', JSON.stringify(existing));
-        setPlaylists(existing); // Update local state
+        setPlaylists(existing);
         
-        // Notify other components (like Playlists.jsx)
         window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: existing } }));
       }
     } catch (e) {
       console.error("Error saving to recents:", e);
     }
   };
-  // --- EFFECT HOOKS ---
+
+  // Initialize audio elements with media controls disabled
+  useEffect(() => {
+    audioVocalRef.current = new Audio();
+    audioInstrRef.current = new Audio();
+    
+    // Set preload to metadata so currentTime can be set
+    audioVocalRef.current.preload = 'metadata';
+    audioInstrRef.current.preload = 'metadata';
+    
+    // Add event listeners for when either track ends
+    const handleTrackEnd = () => {
+      // Clear any pending delayed play
+      if (delayTimeoutRef.current) {
+        clearTimeout(delayTimeoutRef.current);
+        delayTimeoutRef.current = null;
+      }
+      
+      // Pause both tracks
+      audioVocalRef.current.pause();
+      audioInstrRef.current.pause();
+      
+      // Reset playing state
+      setIsMixerPlaying(false);
+    };
+    
+    audioVocalRef.current.addEventListener('ended', handleTrackEnd);
+    audioInstrRef.current.addEventListener('ended', handleTrackEnd);
+    
+    return () => {
+      if (audioVocalRef.current) {
+        audioVocalRef.current.removeEventListener('ended', handleTrackEnd);
+        audioVocalRef.current.pause();
+        audioVocalRef.current.src = '';
+      }
+      if (audioInstrRef.current) {
+        audioInstrRef.current.removeEventListener('ended', handleTrackEnd);
+        audioInstrRef.current.pause();
+        audioInstrRef.current.src = '';
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setTracks((prevTracks) => sortTracks(prevTracks, sortOption));
@@ -374,12 +621,12 @@ function MusicMixer() {
   // --- RENDER ---
   
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col pt-16 bg-slate-900">
       
       {/* === MIXER MODULE (Top 70vh) === */}
-      <div className="h-[70vh] bg-slate-900 text-white p-6 flex flex-col items-center justify-between shadow-2xl relative overflow-hidden">
+      <div className="h-[70vh] bg-slate-900 text-white p-6 flex flex-col items-center justify-between relative overflow-hidden">
         
-        <h1 className="text-3xl font-bold tracking-widest text-blue-400 mb-4">MUXER MIX LAB</h1>
+        <h1 className="text-3xl font-bold tracking-widest text-blue-400 mb-4">MUXER LAB</h1>
 
         <div className="flex w-full h-full gap-8 justify-center items-center">
           
@@ -393,7 +640,12 @@ function MusicMixer() {
               </div>
             ) : mixerSlotA ? (
               <div className="flex flex-col items-center h-full">
-                <img src={mixerSlotA.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow shadow-[0_0_30px_rgba(59,130,246,0.5)] mt-4" alt="Album" />
+                <div className="relative mt-4">
+                  <img src={mixerSlotA.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow shadow-[0_0_30px_rgba(59,130,246,0.5)]" alt="Album" />
+                  <div className="absolute -top-2 -left-2 bg-blue-600 text-white px-2 py-1 rounded-lg text-xs font-bold shadow-lg">
+                    {mixerSlotA.bpm} BPM
+                  </div>
+                </div>
                 <h3 className="mt-6 text-xl font-bold text-center">{mixerSlotA.title}</h3>
                 <p className="text-gray-400">{mixerSlotA.artist.name}</p>
                 <div className="flex gap-1 mt-auto mb-4 h-12 items-end">
@@ -411,10 +663,14 @@ function MusicMixer() {
           <div className="w-1/4 flex flex-col items-center gap-6 z-10">
             
             {/* BPM Display */}
-            <div className="bg-slate-800 p-4 rounded-lg border border-green-700 text-center w-full">
-               <div className="text-xs text-gray-400 uppercase tracking-wider">Master Tempo</div>
-               <div className="text-4xl font-mono text-green-400">{detectedBPM} <span className="text-sm">BPM</span></div>
-               <button onClick={handleAutoSync} className="mt-2 text-xs bg-green-600/20 text-green-400 px-2 py-1 rounded border border-green-600/50 hover:bg-green-600 hover:text-white transition-all">
+            <div className={`bg-slate-800 p-4 rounded-lg border border-green-700 text-center w-full transition-opacity ${!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB ? 'opacity-50' : ''}`}>
+               <div className="text-xs text-gray-400 uppercase tracking-wider">Master Tempo {bpmMultiplier !== "1x" && <span className="text-amber-400">({bpmMultiplier})</span>}</div>
+               <div className="text-4xl font-mono text-green-400">{detectedBPM || "---"}<span className="text-sm ml-1">{detectedBPM ? "BPM" : ""}</span></div>
+               <button 
+                 onClick={handleAutoSync} 
+                 disabled={!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB}
+                 className="mt-2 text-xs bg-green-600/20 text-green-400 px-2 py-1 rounded border border-green-600/50 hover:bg-green-600 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
                  AUTO SYNC
                </button>
             </div>
@@ -422,31 +678,48 @@ function MusicMixer() {
             {/* Play Button */}
             <button 
               onClick={toggleMixerPlay}
-              disabled={!mixerSlotA || !mixerSlotB}
+              disabled={!mixerSlotA || !mixerSlotB || isUpdating}
               className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-                (!mixerSlotA || !mixerSlotB) ? 'bg-gray-700 opacity-50' : 'bg-white hover:scale-105 shadow-[0_0_40px_rgba(255,255,255,0.3)]'
+                (!mixerSlotA || !mixerSlotB || isUpdating) ? 'bg-gray-700 opacity-50 cursor-not-allowed' : 'bg-white hover:scale-105 shadow-[0_0_40px_rgba(255,255,255,0.3)]'
               }`}
             >
               <img src={isMixerPlaying ? pauseIcon : playIcon} className={`w-8 ${isMixerPlaying ? '' : 'ml-1'}`} alt="Play/Pause" />
             </button>
 
             {/* Offset Slider */}
-            <div className="w-full bg-slate-800 p-4 rounded-lg border border-gray-700">
+            <div className={`w-full bg-slate-800 p-4 rounded-lg border border-gray-700 relative transition-opacity ${!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB ? 'opacity-50' : ''}`}>
+               {isUpdating && (
+                 <div className="absolute inset-0 bg-slate-900/80 rounded-lg flex items-center justify-center z-10">
+                   <span className="text-yellow-400 text-xs font-bold animate-pulse">UPDATING...</span>
+                 </div>
+               )}
+               <div className="text-xs text-gray-400 mb-2 text-center uppercase tracking-wider">Instrumental Offset</div>
                <div className="flex justify-between text-xs text-gray-400 mb-2">
-                 <span>Vocals Late</span>
-                 <span className="text-white font-mono">{offsetMs}ms</span>
-                 <span>Instr Late</span>
+                 <span>Early</span>
+                 <span className="text-white font-mono">
+                   {Math.round(offsetMs)}ms 
+                   <span className="text-gray-500 ml-1">(≈{Math.round(offsetMs / getCurrentBeatInterval() * 10) / 10} beats)</span>
+                 </span>
+                 <span>Late</span>
                </div>
+               {detectedBPM && (
+                 <div className="text-center text-[10px] text-gray-500 mb-2">
+                   Step: {Math.round(getCurrentBeatInterval())}ms/beat @ {detectedBPM} BPM
+                 </div>
+               )}
                <input 
                  type="range" 
-                 min="-500" max="500" 
-                 value={offsetMs} 
-                 onChange={(e) => setOffsetMs(parseInt(e.target.value))}
-                 className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                 min="-20" 
+                 max="20" 
+                 step="1"
+                 value={Math.round(offsetMs / getCurrentBeatInterval())}
+                 onChange={(e) => handleOffsetChange(parseInt(e.target.value) * getCurrentBeatInterval())}
+                 disabled={!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB}
+                 className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                />
             </div>
             
-            <button onClick={handleFinalizeMix} className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 rounded-full font-bold shadow-lg transition-all">
+            <button onClick={handleFinalizeMix} className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all">
               FINALIZE MIX
             </button>
           </div>
@@ -461,7 +734,12 @@ function MusicMixer() {
               </div>
             ) : mixerSlotB ? (
               <div className="flex flex-col items-center h-full">
-                 <img src={mixerSlotB.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] mt-4" alt="Album" />
+                <div className="relative mt-4">
+                  <img src={mixerSlotB.album.cover_medium} className="w-48 h-48 rounded-full animate-spin-slow bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)]" alt="Album" />
+                  <div className="absolute -top-2 -right-2 bg-red-600 text-white px-2 py-1 rounded-lg text-xs font-bold shadow-lg">
+                    {mixerSlotB.bpm} BPM
+                  </div>
+                </div>
                  <h3 className="mt-6 text-xl font-bold text-center">{mixerSlotB.title}</h3>
                  <p className="text-gray-400">{mixerSlotB.artist.name}</p>
                  <div className="flex gap-1 mt-auto mb-4 h-12 items-end">
@@ -478,10 +756,10 @@ function MusicMixer() {
       </div>
 
       {/* === SONG GRID MODULE === */}
-      <div className={`min-h-[50vh] flex flex-col bg-gray-50 ${currentTrack ? 'pb-[160px]' : 'pb-4'}`}>
+      <div className={`min-h-[50vh] flex flex-col bg-slate-900 text-white ${currentTrack ? 'pb-[160px]' : 'pb-4'}`}>
         
         {/* Search Bar */}
-        <div className="p-6 bg-white border-b">
+        <div className="p-6 bg-slate-800 border-b border-slate-700">
           <div className="flex justify-center items-center gap-4">
             <form onSubmit={handleSearch} className="w-1/2 relative">
               <input
@@ -489,7 +767,7 @@ function MusicMixer() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search for Songs"
-                className="w-full px-6 py-3 border border-gray-200 rounded-full bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                className="w-full px-6 py-3 border border-blue-500/30 rounded-full bg-slate-700 text-white placeholder-gray-400 hover:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 shadow-md hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] focus:shadow-[0_0_30px_rgba(59,130,246,0.5)] transition-all"
               />
             </form>
 
@@ -497,28 +775,28 @@ function MusicMixer() {
               <button
                 type="button"
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="p-3 border border-gray-200 rounded-full bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                className="p-3 border border-blue-500/30 rounded-full bg-slate-700 hover:bg-slate-600 hover:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               >
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
                 </svg>
               </button>
               {showSortDropdown && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                <div className="absolute right-0 mt-2 w-56 bg-slate-700 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 z-50">
                    <div className="py-2">
-                     <button onClick={() => { setSortOption('popularity-high'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Most Popular</button>
-                     <button onClick={() => { setSortOption('popularity-low'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Least Popular</button>
-                     <button onClick={() => { setSortOption('title-asc'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Title (A-Z)</button>
-                     <button onClick={() => { setSortOption('artist-asc'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Artist (A-Z)</button>
+                     <button onClick={() => { setSortOption('popularity-high'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 hover:text-blue-400 transition-colors">Most Popular</button>
+                     <button onClick={() => { setSortOption('popularity-low'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 hover:text-blue-400 transition-colors">Least Popular</button>
+                     <button onClick={() => { setSortOption('title-asc'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 hover:text-blue-400 transition-colors">Title (A-Z)</button>
+                     <button onClick={() => { setSortOption('artist-asc'); setShowSortDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 hover:text-blue-400 transition-colors">Artist (A-Z)</button>
                    </div>
                 </div>
               )}
             </div>
           </div>
-          <h2 className="text-2xl font-bold mt-4">Track list</h2>
+          <h2 className="text-2xl font-bold mt-4 text-blue-400 tracking-wider">TRACK LIBRARY</h2>
         </div>
 
-        {error && <div className="p-8 text-center text-red-500">{error}</div>}
+        {error && <div className="p-8 text-center text-red-400">{error}</div>}
 
         {/* Grid */}
         <div className={`flex-1 overflow-y-auto p-8 transition-all duration-300 ${isLoading ? 'fade-out' : ''}`}>
@@ -526,11 +804,34 @@ function MusicMixer() {
             {tracks.map((track, index) => (
               <div
                 key={track.id}
-                className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 flex flex-col"
+                className="bg-slate-800 p-4 rounded-lg shadow-md border border-blue-500/20 flex flex-col transition-all duration-200 hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] hover:border-blue-500/50 hover:-translate-y-3 hover:scale-[1.02]"
                 onContextMenu={(e) => handleRightClick(e, track)}
               >
                 <div className="relative aspect-square mb-3 overflow-hidden rounded-md group">
                   <img src={track.album.cover_medium} alt={track.title} className="w-full h-full object-cover" />
+                  
+                  {/* Like Button - shows on hover or when liked */}
+                  <button
+                    onClick={(e) => handleLikeToggle(e, track)}
+                    className={`absolute top-2 right-2 z-10 transition-all duration-200 ${
+                      likedTracks.includes(track.id) 
+                        ? 'opacity-100' 
+                        : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                  >
+                    <svg 
+                      className={`w-6 h-6 ${
+                        likedTracks.includes(track.id) 
+                          ? 'fill-pink-500 stroke-pink-500' 
+                          : 'fill-none stroke-white'
+                      } transition-colors duration-200 drop-shadow-lg`}
+                      viewBox="0 0 24 24" 
+                      strokeWidth="2"
+                    >
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                  </button>
+
                   <button
                     onClick={() => playFromQueue(tracks, index)}
                     className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity"
@@ -538,21 +839,21 @@ function MusicMixer() {
                      <img className="invert w-10" src={currentTrack?.id === track.id && isPlaying ? pauseIcon : playIcon} alt="Play" />
                   </button>
                 </div>
-                <h3 className="font-semibold truncate">{track.title}</h3>
-                <p className="text-sm text-gray-600 truncate mb-2">{track.artist.name}</p>
+                <h3 className="font-semibold truncate text-white">{track.title}</h3>
+                <p className="text-sm text-gray-400 truncate mb-2">{track.artist.name}</p>
               </div>
             ))}
           </div>
-          {isLoading && <div className="text-center text-gray-500">Loading Tracks...</div>}
+          {isLoading && <div className="text-center text-gray-400">Loading Tracks...</div>}
         </div>
 
         {/* Pagination */}
         {totalTracks > 0 && (
           <div className={`fixed left-0 right-0 z-40 ${currentTrack ? 'bottom-[80px]' : 'bottom-0'}`}>
-            <div className="p-4 border-t bg-white/90 backdrop-blur-sm shadow-lg flex justify-center gap-4">
-               <button onClick={handlePrevPage} disabled={currentPage === 1} className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-50">Previous</button>
-               <span className="self-center">Page {currentPage} of {totalPages}</span>
-               <button onClick={handleNextPage} disabled={currentPage >= totalPages} className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-50">Next</button>
+            <div className="p-4 border-t border-slate-700 bg-slate-800/95 backdrop-blur-sm shadow-lg flex justify-center gap-4">
+               <button onClick={handlePrevPage} disabled={currentPage === 1} className="px-4 py-2 border border-blue-500/30 rounded bg-slate-700 text-white hover:bg-blue-600 hover:border-blue-500 disabled:opacity-50 disabled:hover:bg-slate-700 transition-colors">Previous</button>
+               <span className="self-center text-gray-300">Page {currentPage} of {totalPages}</span>
+               <button onClick={handleNextPage} disabled={currentPage >= totalPages} className="px-4 py-2 border border-blue-500/30 rounded bg-slate-700 text-white hover:bg-blue-600 hover:border-blue-500 disabled:opacity-50 disabled:hover:bg-slate-700 transition-colors">Next</button>
             </div>
           </div>
         )}
@@ -563,30 +864,30 @@ function MusicMixer() {
       {/* Context Menu */}
       {showContextMenu && selectedTrack && (
         <div
-          className="context-menu fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50"
+          className="context-menu fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50"
           style={{ left: contextMenuPosition.x, top: contextMenuPosition.y, minWidth: '180px' }}
         >
-          <div className="px-4 py-1 text-xs text-gray-400 font-bold border-b mb-1">LOAD TO MIXER</div>
-          <button onClick={() => { loadIntoMixer(selectedTrack, 'A'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 text-blue-700 font-medium">Set as Vocals (Deck A)</button>
-          <button onClick={() => { loadIntoMixer(selectedTrack, 'B'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-purple-50 text-purple-700 font-medium">Set as Melody (Deck B)</button>
-          <div className="border-t my-1"></div>
-          <button onClick={() => { setShowPlaylistMenu(true); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Add to Playlist</button>
+          <div className="px-4 py-1 text-xs text-gray-400 font-bold border-b border-slate-700 mb-1">LOAD TO MUXER</div>
+          <button onClick={() => { loadIntoMixer(selectedTrack, 'A'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-blue-600/20 text-blue-400 font-medium transition-colors">Set as Vocals</button>
+          <button onClick={() => { loadIntoMixer(selectedTrack, 'B'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-600/20 text-red-400 font-medium transition-colors">Set as Melody</button>
+          <div className="border-t border-slate-700 my-1"></div>
+          <button onClick={() => { setShowPlaylistMenu(true); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-blue-400 transition-colors">Add to Playlist</button>
         </div>
       )}
 
       {/* Playlist Menu */}
       {showPlaylistMenu && selectedTrack && (
         <div
-          className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50 max-h-64 overflow-y-auto"
+          className="fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50 max-h-64 overflow-y-auto"
           style={{ left: contextMenuPosition.x + 160, top: contextMenuPosition.y, minWidth: '200px' }}
         >
            {playlists.length === 0 ? (
-             <div className="px-4 py-2 text-sm text-gray-500">No playlists available</div>
+             <div className="px-4 py-2 text-sm text-gray-400">No playlists available</div>
            ) : (
              playlists.map((playlist) => (
-               <button key={playlist.id} onClick={() => addToPlaylist(playlist, selectedTrack)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">
-                 <div className="font-medium">{playlist.name}</div>
-                 <div className="text-xs text-gray-500">{playlist.tracks.length} tracks</div>
+               <button key={playlist.id} onClick={() => addToPlaylist(playlist, selectedTrack)} className="w-full text-left px-4 py-2 text-sm hover:bg-blue-600/20 hover:text-blue-400 transition-colors">
+                 <div className="font-medium text-white">{playlist.name}</div>
+                 <div className="text-xs text-gray-400">{playlist.tracks.length} tracks</div>
                </button>
              ))
            )}
@@ -595,7 +896,7 @@ function MusicMixer() {
 
       {/* Notifications */}
       {notification && (
-        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg shadow-green-500/50 z-50 animate-bounce">
           {notification}
         </div>
       )}

@@ -22,14 +22,27 @@ export const musicService = {
       const response = await axios.post(`${MIXER_BASE_URL}/split`, {
         track_url: trackUrl
       });
-      return response.data; // Now includes 'bpm'
+      return response.data;
     } catch (error) {
       console.error("Error splitting track:", error);
       throw error;
     }
   },
 
-  // NEW: Finalize Mix
+  adjustBPM: async (sessionId, targetBPM, originalBPM) => {
+    try {
+      const response = await axios.post(`${MIXER_BASE_URL}/adjust-bpm`, {
+        session_id: sessionId,
+        target_bpm: targetBPM,
+        original_bpm: originalBPM
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error adjusting BPM:", error);
+      throw error;
+    }
+  },
+
   finalizeMix: async (sessionA, sessionB, offsetMs) => {
     try {
       const response = await axios.post(`${MIXER_BASE_URL}/finalize`, {

@@ -46,7 +46,7 @@ function MusicBar() {
 
       {/* Center controls + progress */}
       <div className="flex flex-col items-center justify-center flex-1">
-        <div className="flex items-center gap-4 mb-2">
+        <div className="flex items-center gap-4">
           <button
             className="h-10 w-10 disabled:opacity-40"
             onClick={playPrevious}
@@ -77,7 +77,7 @@ function MusicBar() {
         </div>
 
         {/* Progress bar */}
-        <div className="flex items-center gap-3 w-full max-w-xl">
+        <div className="flex items-center gap-3 w-full max-w-xl mx-auto">
           <span className="text-xs w-10 text-right">
             {formatTime(progress)}
           </span>
@@ -97,7 +97,7 @@ function MusicBar() {
       </div>
 
       {/* Right: volume */}
-      <div className="flex items-center gap-2 w-1/5 justify-end">
+      <div className="flex items-center gap-2 w-1/3 justify-end">
         <span className="text-xs">Vol</span>
         <input
           type="range"
