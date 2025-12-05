@@ -17,7 +17,6 @@ function Register () {
 
     const navigate = useNavigate()
 
-    // Register page with the input form fields that allow creation of a new user account with their information
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
@@ -27,16 +26,17 @@ function Register () {
                 displayName: `${firstName} ${lastName}`,
             })
 
-            // will fix later, cant store data atm
-            // await setDoc(doc(db, "Users", userCredential.user.uid), { firstName, lastName, dateOfBirth, email })
-
             console.log("User registered: ", userCredential.user)
-            // navigate to sign-in or account page if you want
-            // navigate("/signin")
+            
+            /
+            navigate("/"); 
+            
+
         } catch (err) {
             console.error("Error signing in: ", err.message)
             setError(err.message)
         }
+        
 
         console.log("Registration attempt with: ", { email, password, firstName, lastName, dateOfBirth })
     }

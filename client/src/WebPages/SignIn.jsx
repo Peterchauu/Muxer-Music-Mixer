@@ -56,7 +56,7 @@ function SignIn() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log("User: ", userCredential.user, " signed in");
-      navigate("/account");
+      navigate("/");
     } catch (err) {
       console.error("Error signing in: ", err);
       setError(getFriendlyErrorMessage(err));
