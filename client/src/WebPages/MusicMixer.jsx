@@ -3,6 +3,8 @@ import { musicService } from '../services/Services';
 import { useAudio } from '../context/AudioContext';
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // Helper for backend URL
 const SERVER_URL = "http://localhost:8080";
@@ -17,7 +19,9 @@ function MusicMixer() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOption, setSortOption] = useState('popularity-high');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
+
   // These were missing in your previous attempt causing the ReferenceError:
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
@@ -224,25 +228,95 @@ function MusicMixer() {
     
     try {
       const result = await musicService.finalizeMix(
-        mixerSlotA.stems.session_id, // Ensure your splitTrack returns session_id inside stems
+        mixerSlotA.stems.session_id, 
         mixerSlotB.stems.session_id,
         offsetMs
       );
       
-      console.log("Mix Created:", result);
-      showNotification("Mix Ready! Downloading...");
-      
-      // Auto-download the file
-      const link = document.createElement('a');
-      link.href = `${SERVER_URL}${result.mix_url}`;
-      link.download = `Muxer_Mashup_${Date.now()}.mp3`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // === CREATE MIX TRACK OBJECT ===
+      // This mimics the Deezer structure so Playlists.jsx can read it
+      const newMixTrack = {
+        id: `mix_${Date.now()}`, // Unique ID
+        title: result.title || `Mashup: ${mixerSlotA.title} x ${mixerSlotB.title}`,
+        artist: { name: currentUser?.displayName || "My Custom Mix" }, // Or current user name
+        album: { 
+          // Use a placeholder image or the cover of the Vocal track
+          cover_small: mixerSlotA.album.cover_small, 
+          cover_medium: mixerSlotA.album.cover_medium 
+        },
+        duration: 0, // You can calculate this if needed
+        preview: `${SERVER_URL}${result.mix_url}`, // The link to play it
+        isLocalMix: true // Flag to help us identify it later
+      };
 
-      // Add to playlist logic here if you want
+      // === REQ 19: Auto-save to Recents ===
+      saveToRecents(newMixTrack);
+
+      // === REQ 16: Visual Indication / Encouragement ===
+      // Instead of just downloading, we select this track 
+      // and open the playlist menu to encourage saving.
+      setSelectedTrack(newMixTrack); 
+      setNotification("Mix saved to Recents! Add to a playlist?");
+      setShowPlaylistMenu(true); // <--- This pops up the "Add to Playlist" menu immediately
+
+      // Auto-download (Optional, keep if you want)
+      //const link = document.createElement('a');
+      //link.href = `${SERVER_URL}${result.mix_url}`;
+      //link.download = `${newMixTrack.title}.mp3`;
+      //document.body.appendChild(link);
+      //link.click();
+      //document.body.removeChild(link);
+
     } catch (err) {
+      console.error(err);
       showNotification("Failed to create mix.");
+    }
+  };
+
+  // --- HELPER: Save to Recents (Req 19) ---
+  const saveToRecents = (mixTrack) => {
+    try {
+      // 1. Get existing playlists
+      const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+      
+      // 2. Find or Create "Recents" playlist
+      let recentsIdx = existing.findIndex(p => p.name === "Recents");
+      let recents;
+
+      if (recentsIdx === -1) {
+        // Create it if missing
+        recents = {
+          id: 'playlist_recents', // Fixed ID for Recents
+          name: "Recents",
+          icon: null, 
+          tracks: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        existing.unshift(recents); // Add to front
+        recentsIdx = 0;
+      } else {
+        recents = existing[recentsIdx];
+      }
+
+      // 3. Add the new mix to the top of Recents
+      // Check for duplicates based on ID
+      if (!recents.tracks.some(t => t.id === mixTrack.id)) {
+        recents.tracks.unshift(mixTrack);
+        recents.updatedAt = new Date().toISOString();
+        
+        // Update the array
+        existing[recentsIdx] = recents;
+        
+        // 4. Save back to Storage
+        localStorage.setItem('userPlaylists', JSON.stringify(existing));
+        setPlaylists(existing); // Update local state
+        
+        // Notify other components (like Playlists.jsx)
+        window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: existing } }));
+      }
+    } catch (e) {
+      console.error("Error saving to recents:", e);
     }
   };
   // --- EFFECT HOOKS ---
@@ -337,7 +411,7 @@ function MusicMixer() {
           <div className="w-1/4 flex flex-col items-center gap-6 z-10">
             
             {/* BPM Display */}
-            <div className="bg-black/50 p-4 rounded-lg border border-gray-700 text-center w-full">
+            <div className="bg-slate-800 p-4 rounded-lg border border-green-700 text-center w-full">
                <div className="text-xs text-gray-400 uppercase tracking-wider">Master Tempo</div>
                <div className="text-4xl font-mono text-green-400">{detectedBPM} <span className="text-sm">BPM</span></div>
                <button onClick={handleAutoSync} className="mt-2 text-xs bg-green-600/20 text-green-400 px-2 py-1 rounded border border-green-600/50 hover:bg-green-600 hover:text-white transition-all">
