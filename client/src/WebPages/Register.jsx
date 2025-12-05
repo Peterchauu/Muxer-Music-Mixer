@@ -2,6 +2,7 @@ import { useState } from "react"
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth"
 import { auth } from "../services/firebaseInit"
 import { useNavigate } from "react-router-dom"
+import { ref, set } from "firebase/database";
 import { db } from "../services/firebaseInit"
 import { doc, setDoc } from "firebase/firestore"
 
@@ -21,14 +22,21 @@ function Register () {
         e.preventDefault()
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+            const user = userCredential.user;
 
             await updateProfile(userCredential.user, {
                 displayName: `${firstName} ${lastName}`,
             })
 
+            await set(ref(db, 'users/' + user.uid), {
+                firstName: firstName,
+                lastName: lastName,
+                dateOfBirth: dateOfBirth,
+                email: email,
+                playlists: []
+            });
+
             console.log("User registered: ", userCredential.user)
-            
-            /
             navigate("/"); 
             
 
