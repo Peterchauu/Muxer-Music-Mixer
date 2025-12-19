@@ -15,12 +15,10 @@ from concurrent.futures import ThreadPoolExecutor
 import warnings
 import subprocess
 
+
+
 router = APIRouter()
-
-# Thread pool for CPU-intensive tasks
 executor = ThreadPoolExecutor(max_workers=2)
-
-# Setup Directories
 BASE_DIR = Path(__file__).resolve().parent.parent  
 STEMS_DIR = (BASE_DIR / ".." / "temp_stems").resolve()
 STEMS_DIR.mkdir(parents=True, exist_ok=True)
@@ -29,8 +27,10 @@ STEMS_DIR.mkdir(parents=True, exist_ok=True)
 RUBBERBAND_DIR = (BASE_DIR / ".." / "rubberband" / "rubberband-3.3.0-gpl-executable-windows").resolve()
 RUBBERBAND_EXE = RUBBERBAND_DIR / "rubberband.exe"
 
-# Lazy-load Demucs to avoid initialization issues
 _demucs_model = None
+
+
+
 
 def get_demucs_model():
     """Lazy-load Demucs model on first use"""
@@ -40,6 +40,8 @@ def get_demucs_model():
         _demucs_model.cpu()
         _demucs_model.eval()
     return _demucs_model
+
+
 
 # --- REQUEST MODELS ---
 class SplitRequest(BaseModel):
@@ -54,6 +56,8 @@ class MixRequest(BaseModel):
     session_id_vocals: str
     session_id_instr: str
     offset_ms: int
+    
+    
 
 # --- HELPERS ---
 
@@ -62,7 +66,7 @@ def get_bpm(file_path):
     warnings.filterwarnings('ignore')
     
     try:
-        # Load audio (only first 60s to save time)
+        # Load audio
         y, sr = librosa.load(str(file_path), duration=60)
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
         tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
@@ -70,8 +74,9 @@ def get_bpm(file_path):
     except Exception as e:
         return 120  # Default BPM if detection fails
 
+
+
 def process_demucs_separation(wav_path, session_dir, model):
-    """CPU-intensive Demucs processing - runs in thread pool"""
     # Load audio
     waveform, sr = torchaudio.load(str(wav_path))
     
@@ -105,16 +110,19 @@ def process_demucs_separation(wav_path, session_dir, model):
     vocals = sources[3].cpu().numpy()
     
     # Combine non-vocal stems for instrumental
-    accompaniment = drums + bass + other
+    instrumental = drums + bass + other
     
     # Save stems as WAV
     vocals_path = session_dir / "vocals.wav"
-    accompaniment_path = session_dir / "accompaniment.wav"
+    instrumental_path = session_dir / "instrumental.wav"
     
     sf.write(str(vocals_path), vocals.T, model.samplerate)
-    sf.write(str(accompaniment_path), accompaniment.T, model.samplerate)
+    sf.write(str(instrumental_path), instrumental.T, model.samplerate)
     
-    return vocals_path, accompaniment_path
+    return vocals_path, instrumental_path
+
+
+
 
 # --- ROUTES ---
 
@@ -158,10 +166,13 @@ async def split_track(body: SplitRequest):
         "session_id": session_id,
         "bpm": round(bpm),
         "vocals_url": f"/stems/{session_id}/vocals.wav",
-        "accompaniment_url": f"/stems/{session_id}/accompaniment.wav",
+        "instrumental_url": f"/stems/{session_id}/instrumental.wav",
     }
 
-def process_bpm_adjustment(accompaniment_path, adjusted_path, ratio, sr):
+
+
+
+def process_bpm_adjustment(instrumental_path, adjusted_path, ratio, sr):
     """CPU-intensive time-stretching using RubberBand CLI - runs in thread pool"""
     # Calculate tempo change percentage (RubberBand uses tempo ratio)
     # ratio = target_bpm / original_bpm
@@ -172,7 +183,7 @@ def process_bpm_adjustment(accompaniment_path, adjusted_path, ratio, sr):
         str(RUBBERBAND_EXE),
         "--tempo", str(ratio),  # Tempo change ratio
         "--pitch-hq",           # High quality pitch preservation
-        str(accompaniment_path),
+        str(instrumental_path),
         str(adjusted_path)
     ]
     
@@ -182,29 +193,37 @@ def process_bpm_adjustment(accompaniment_path, adjusted_path, ratio, sr):
     if result.returncode != 0:
         raise Exception(f"RubberBand failed: {result.stderr}")
 
+
+
+
+
+
+
 @router.post("/adjust-bpm")
 async def adjust_bpm(body: AdjustBPMRequest):
     """Time-stretch audio to match target BPM without pitch distortion"""
     try:
-        accompaniment_path = STEMS_DIR / body.session_id / "accompaniment.wav"
+        instrumental_path = STEMS_DIR / body.session_id / "instrumental.wav"
         
-        if not accompaniment_path.exists():
+        if not instrumental_path.exists():
             raise HTTPException(status_code=404, detail="Stem not found")
         
         # Calculate time stretch ratio
         ratio = body.target_bpm / body.original_bpm
         
         # Run time-stretching in thread pool
-        adjusted_path = STEMS_DIR / body.session_id / "accompaniment_adjusted.wav"
+        adjusted_path = STEMS_DIR / body.session_id / "instrumental_adjusted.wav"
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(executor, process_bpm_adjustment, accompaniment_path, adjusted_path, ratio, None)
+        await loop.run_in_executor(executor, process_bpm_adjustment, instrumental_path, adjusted_path, ratio, None)
         
         return {
-            "adjusted_url": f"/stems/{body.session_id}/accompaniment_adjusted.wav",
+            "adjusted_url": f"/stems/{body.session_id}/instrumental_adjusted.wav",
             "ratio": ratio
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BPM adjustment error: {str(e)}")
+
+
 
 @router.post("/finalize")
 async def finalize_mix(body: MixRequest):
@@ -212,7 +231,7 @@ async def finalize_mix(body: MixRequest):
     try:
         # Paths
         vocal_path = STEMS_DIR / body.session_id_vocals / "vocals.wav"
-        instr_path = STEMS_DIR / body.session_id_instr / "accompaniment.wav"
+        instr_path = STEMS_DIR / body.session_id_instr / "instrumental.wav"
 
         if not vocal_path.exists() or not instr_path.exists():
             raise HTTPException(status_code=404, detail="Source stems not found")

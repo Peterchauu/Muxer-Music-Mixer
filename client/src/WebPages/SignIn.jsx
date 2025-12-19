@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../services/firebaseInit";
+import { auth, db } from "../services/firebaseInit";
+import { ref, get, set, update } from "firebase/database";
 
 
 // Requirement 3 fulfilled
@@ -55,6 +56,25 @@ function SignIn() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Update last login timestamp in Realtime Database
+      const userRef = ref(db, `users/${userCredential.user.uid}`);
+      const snapshot = await get(userRef);
+      
+      if (snapshot.exists()) {
+        await update(userRef, {
+          lastLogin: Date.now()
+        });
+      } else {
+        // Create basic user data if it doesn't exist (for legacy users)
+        await set(userRef, {
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName || email.split('@')[0],
+          createdAt: Date.now(),
+          lastLogin: Date.now()
+        });
+      }
+      
       console.log("User: ", userCredential.user, " signed in");
       navigate("/");
     } catch (err) {
@@ -103,9 +123,9 @@ function SignIn() {
 
       {/* Requirement 4 fulfilled (1/2) */}
 
-      <div className={`flex justify-center items-center min-h-screen bg-gray-100 ${showForgotPassword ? "blur-sm" : ""}`}>
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow-md w-80 border-2">
-          <h2 className="text-xl font-bold mb-4 text-center">Sign In</h2>
+      <div className={`flex justify-center items-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ${showForgotPassword ? "blur-sm" : ""}`}>
+        <form onSubmit={handleSubmit} className="bg-slate-800 p-8 rounded-lg shadow-[0_0_30px_rgba(59,130,246,0.3)] w-96 border border-blue-500/30">
+          <h2 className="text-2xl font-bold mb-6 text-center text-white">Sign In</h2>
 
           {error && (
             <p className="text-red-500 text-sm mb-2 text-center">
@@ -113,33 +133,33 @@ function SignIn() {
             </p>
           )}
 
-          <label className="block mb-2 text-center">
-            Email
+          <label className="block mb-4 text-center">
+            <span className="text-gray-300 font-medium">Email</span>
             <input
               type="email"
               placeholder="example@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border p-2 rounded mt-1"
+              className="w-full bg-slate-700 border border-blue-500/30 text-white p-3 rounded-lg mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
               required
             />
           </label>
 
-          <label className="block mb-4 text-center">
-            Password
+          <label className="block mb-6 text-center">
+            <span className="text-gray-300 font-medium">Password</span>
             <input
               type="password"
               placeholder="********"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border p-2 mt-1"
+              className="w-full bg-slate-700 border border-blue-500/30 text-white p-3 rounded-lg mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
               required
             />
           </label>
 
           <button
             type="submit"
-            className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+            className="w-full bg-blue-600/20 text-blue-400 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all"
           >
             Sign In
           </button>
@@ -149,7 +169,7 @@ function SignIn() {
           <button
             type="button"
             onClick={handleForgotPassword}
-            className="w-full mt-3 text-blue-500 hover:text-blue-700 underline text-sm"
+            className="w-full mt-4 text-blue-400 hover:text-blue-300 underline text-sm transition-colors"
           >
             I forgot my password
           </button>
@@ -158,18 +178,18 @@ function SignIn() {
 
       {/* forgot password menu */}
       {showForgotPassword && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg shadow-xl w-96 mx-4">
-            <h3 className="text-xl font-bold mb-4 text-center">Reset Password</h3>
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+          <div className="bg-slate-800 border border-blue-500/30 p-8 rounded-lg shadow-[0_0_50px_rgba(59,130,246,0.5)] w-96 mx-4">
+            <h3 className="text-xl font-bold mb-4 text-center text-white">Reset Password</h3>
             <form onSubmit={handleResetSubmit}>
               <label className="block mb-4">
-                Email Address
+                <span className="text-gray-300 font-medium">Email Address</span>
                 <input
                   type="email"
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   placeholder="example@gmail.com"
-                  className="w-full border p-3 rounded mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-700 border border-blue-500/30 text-white p-3 rounded-lg mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   required
                 />
               </label>
@@ -187,7 +207,7 @@ function SignIn() {
               )}
 
               {!resetMessage && !resetError && (
-                <p className="text-sm text-gray-600 mb-6">
+                <p className="text-sm text-gray-400 mb-6">
                   If any account exists with this email, a notification will be sent to reset the password.
                 </p>
               )}
@@ -196,13 +216,13 @@ function SignIn() {
                 <button
                   type="button"
                   onClick={handleModalClose}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded hover:bg-gray-400 transition-colors"
+                  className="flex-1 bg-slate-700 text-gray-300 py-3 rounded-lg hover:bg-slate-600 transition-colors font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition-colors"
+                  className="flex-1 bg-blue-600/20 text-blue-400 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all"
                 >
                   Send Reset Email
                 </button>

@@ -15,6 +15,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     // Listen for login/logout events
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // User logged out - clear localStorage
+        localStorage.removeItem('userPlaylists');
+        localStorage.removeItem('cachedTracks');
+      }
       setCurrentUser(user);
       setLoading(false);
     });
@@ -22,7 +27,14 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  const logout = () => {
+  const logout = async () => {
+    // Clear localStorage before signing out
+    localStorage.removeItem('userPlaylists');
+    localStorage.removeItem('cachedTracks');
+    
+    // Dispatch event to reset mixer
+    window.dispatchEvent(new CustomEvent('userLogout'));
+    
     return signOut(auth);
   };
 

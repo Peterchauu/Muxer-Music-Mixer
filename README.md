@@ -10,7 +10,7 @@ A web-based music mixing application with AI-powered stem separation and BPM syn
 - Independent volume and offset controls
 - Modern, responsive UI with React + Tailwind CSS
 
-## Tech Stack
+## Techonology
 
 **Frontend:**
 - React + Vite
@@ -76,14 +76,14 @@ npm install
 npm run dev
 ```
 
-4. Open your browser to `http://localhost:5173`
+4. Open your browser to `http://localhost:5173` or by clicking the domain that npm provides in the CLI
 
 ## Usage
 
 1. Search for songs using the search bar
 2. Load songs into Deck A (vocals) and Deck B (instrumental)
-3. The app will automatically separate stems using AI
-4. Use the "Auto-Sync BPM" button to match tempos without pitch distortion
+3. The app will automatically separate stems using DEMUCS 
+4. Use the "Auto-Sync BPM" button to match tempos with minimal pitch distortion
 5. Adjust offset, volume, and other parameters to create your mix
 
 ## Important Notes

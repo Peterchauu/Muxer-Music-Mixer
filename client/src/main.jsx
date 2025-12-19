@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { AudioProvider } from './context/AudioContext'
 import { AuthProvider } from './context/AuthContext' 
+import { MixerProvider } from './context/MixerContext'
 import App from './App.jsx'
 import './index.css'
 
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <AuthProvider> {/* 2. Wrap AuthProvider around the inner components */}
         <AudioProvider>
-          <App />
+          <MixerProvider>
+            <App />
+          </MixerProvider>
         </AudioProvider>
       </AuthProvider>
     </BrowserRouter>

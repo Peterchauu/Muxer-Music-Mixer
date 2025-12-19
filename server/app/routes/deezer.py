@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from ..services.deezer_service import DeezerService
 
+
+
 router = APIRouter()
 
 @router.get("/search")

@@ -18,14 +18,50 @@ export function AudioProvider({ children }) {
   const [queue, setQueue] = useState([]);
   const [queueIndex, setQueueIndex] = useState(-1);
 
+  // music bar visibility state
+  const [showMusicBar, setShowMusicBar] = useState(true);
+  const lastActivityTimeRef = useRef(Date.now());
+  const hideTimeoutRef = useRef(null);
+
   // keep audio element volume in sync with state
   useEffect(() => {
     audioRef.current.volume = volume;
   }, [volume]);
 
+  // Auto-hide music bar after 5 seconds of inactivity
+  useEffect(() => {
+    const resetHideTimer = () => {
+      // Clear existing timeout
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+
+      // Show the music bar
+      setShowMusicBar(true);
+      lastActivityTimeRef.current = Date.now();
+
+      // Set new timeout to hide after 5 seconds
+      hideTimeoutRef.current = setTimeout(() => {
+        setShowMusicBar(false);
+      }, 5000);
+    };
+
+    // Reset timer when track changes or play state changes
+    if (currentTrack) {
+      resetHideTimer();
+    }
+
+    return () => {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+    };
+  }, [currentTrack, isPlaying]);
+
   // wire up timeupdate / metadata / ended
   useEffect(() => {
     const audio = audioRef.current;
+    let progressInterval;
 
     const handleTimeUpdate = () => {
       setProgress(audio.currentTime || 0);
@@ -40,14 +76,37 @@ export function AudioProvider({ children }) {
       // later we can auto-advance: playNext();
     };
 
+    const handlePlay = () => {
+      // Start custom progress interval for smoother updates (every 100ms)
+      progressInterval = setInterval(() => {
+        if (!audio.paused && !audio.ended) {
+          setProgress(audio.currentTime || 0);
+        }
+      }, 100); // Adjust this value for audio updates: lower = faster updates for music bar
+    };
+
+    const handlePause = () => {
+      // Clear interval when paused
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
 
     return () => {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
       audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
     };
   }, []);
 
@@ -157,6 +216,15 @@ export function AudioProvider({ children }) {
     }
   };
 
+  const handleSeek = (percent) => {
+    const audio = audioRef.current;
+    if (audio.duration) {
+      const newTime = (percent / 100) * audio.duration;
+      audio.currentTime = newTime;
+      setProgress(newTime);
+    }
+  };
+
   const value = {
     currentTrack,
     isPlaying,
@@ -166,6 +234,7 @@ export function AudioProvider({ children }) {
     progress,
     duration,
     handleProgressChange,
+    handleSeek,
 
     // queue stuff
     queue,
@@ -173,6 +242,10 @@ export function AudioProvider({ children }) {
     playFromQueue,
     playNext,
     playPrevious,
+
+    // music bar visibility
+    showMusicBar,
+    setShowMusicBar,
   };
 
   return <AudioContext.Provider value={value}>{children}</AudioContext.Provider>;

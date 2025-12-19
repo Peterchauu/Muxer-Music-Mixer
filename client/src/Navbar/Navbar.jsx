@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from "react-router-dom"
-import musicIcon from '../assets/music-Icon.svg'
+import musicMuxerLogo from '../assets/music_muxere_png.png'
 import { useAuth } from '../context/AuthContext'; 
 
 const Navbar = () => {
@@ -45,7 +45,7 @@ const Navbar = () => {
             isVisible ? 'top-0 opacity-100' : '-top-20 opacity-0'
         }`}>
             <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-                <img src={musicIcon} className="h-8 w-8 filter brightness-0 invert" alt="Music Icon" />
+                <img src={musicMuxerLogo} className="h-10" alt="Music Muxer Logo" />
                 
                 <ul className="flex space-x-16">
                     <li><Link to="/" className="font-mono font-bold text-lg text-gray-300 hover:text-blue-400 transition-colors duration-200 tracking-wide px-6 py-3 rounded-lg hover:bg-blue-950/50">Music Mixer</Link></li>
@@ -71,7 +71,7 @@ const Navbar = () => {
                     ) : (
                         <>
                             <Link to="/Sign In" className="hover:text-blue-400 transition-colors duration-200">Sign In</Link>
-                            <Link to="/Register" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors duration-200">Register</Link>
+                            <Link to="/Register" className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all">Register</Link>
                         </>
                     )}
                 </div>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { musicService } from '../services/Services';
-import { likeService } from '../services/likeService';
+import { trackService } from '../services/trackService';
 import { useAudio } from '../context/AudioContext';
+import { useMixer } from '../context/MixerContext';
+import { useAuth } from '../context/AuthContext';
+import TrackCard from '../components/TrackCard';
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 
 // Helper for backend URL
 const SERVER_URL = "http://localhost:8080";
@@ -20,7 +21,6 @@ function MusicMixer() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOption, setSortOption] = useState('popularity-high');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const navigate = useNavigate();
   const { currentUser } = useAuth();
 
   const [showContextMenu, setShowContextMenu] = useState(false);
@@ -30,33 +30,49 @@ function MusicMixer() {
   const [playlists, setPlaylists] = useState([]);
   const [notification, setNotification] = useState(null);
   const [likedTracks, setLikedTracks] = useState([]);
+  const [trackData, setTrackData] = useState({});
+  const [flippedCards, setFlippedCards] = useState([]);
+  
+  // Finalize modal state
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [mixTitle, setMixTitle] = useState('');
+  const [selectedPlaylist, setSelectedPlaylist] = useState('');
 
-  const tracksPerPage = 20;
-  const totalPages = Math.ceil(totalTracks / tracksPerPage);
+  const totalPages = Math.ceil(totalTracks / 20);
 
-  const { currentTrack, isPlaying, playFromQueue } = useAudio();
+  const { currentTrack, isPlaying, playFromQueue, showMusicBar } = useAudio();
 
-  // --- NEW MIXER STATE VARIABLES ---
-  const [mixerSlotA, setMixerSlotA] = useState(null); 
-  const [mixerSlotB, setMixerSlotB] = useState(null);
+  // --- MIXER STATE FROM CONTEXT ---
+  const {
+    mixerSlotA,
+    setMixerSlotA,
+    mixerSlotB,
+    setMixerSlotB,
+    offsetMs,
+    setOffsetMs,
+    detectedBPM,
+    setDetectedBPM,
+    bpmMultiplier,
+    setBpmMultiplier,
+    isMixerPlaying,
+    setIsMixerPlaying,
+    audioVocalRef,
+    audioInstrRef,
+    delayTimeoutRef,
+  } = useMixer();
+
+  // Local processing states
   const [isProcessingA, setIsProcessingA] = useState(false);
   const [isProcessingB, setIsProcessingB] = useState(false);
-  const [offsetMs, setOffsetMs] = useState(0); 
-  const [isMixerPlaying, setIsMixerPlaying] = useState(false);
-  const [detectedBPM, setDetectedBPM] = useState(null);
-  const [bpmMultiplier, setBpmMultiplier] = useState("1x");
   const [isUpdating, setIsUpdating] = useState(false);
-
-  // Audio Refs for Mixer
-  const audioVocalRef = useRef(null);
-  const audioInstrRef = useRef(null);
-  const delayTimeoutRef = useRef(null); // Track setTimeout for offset delays
 
   // --- MIXER LOGIC ---
 
   const loadIntoMixer = async (track, slot) => {
     // Use preview URL or full URL if available
     const trackUrl = track.preview; 
+
+
 
     if (slot === 'A') {
       setIsProcessingA(true);
@@ -69,31 +85,50 @@ function MusicMixer() {
         audioVocalRef.current.src = `${SERVER_URL}${stems.vocals_url}`;
         audioVocalRef.current.load();
         
-      } catch (err) {
-        console.error(err);
+        // Add to Recents playlist
+        addStemmedTrackToRecents(track);
+        
+        // Track usage statistics a user is signed in, referencing users' ID
+        if (currentUser) {
+          await trackService.incrementTrackUsage(currentUser.uid, track, 'vocals');
+          const updatedData = await trackService.getTrackData(currentUser.uid, track.id);
+          setTrackData(prev => ({ ...prev, [track.id]: updatedData }));
+        }
+        
+      } catch (e) {
         showNotification("Failed to split vocals");
       } finally {
         setIsProcessingA(false);
       }
     } else {
       setIsProcessingB(true);
-      // Reset BPM display when loading new stem
       setDetectedBPM(null);
       setBpmMultiplier("1x");
       try {
         const stems = await musicService.splitTrack(trackUrl);
         setMixerSlotB({ ...track, stems, bpm: stems.bpm });
-        audioInstrRef.current.src = `${SERVER_URL}${stems.accompaniment_url}`;
+        audioInstrRef.current.src = `${SERVER_URL}${stems.instrumental_url}`;
         audioInstrRef.current.load();
 
-      } catch (err) {
-        console.error(err);
+        // Add to Recents playlist
+        addStemmedTrackToRecents(track);
+
+        // Track usage statistics
+        if (currentUser) {
+          await trackService.incrementTrackUsage(currentUser.uid, track, 'instrumental');
+          const updatedData = await trackService.getTrackData(currentUser.uid, track.id);
+          setTrackData(prev => ({ ...prev, [track.id]: updatedData }));
+        }
+
+      } catch (e) {
         showNotification("Failed to split instrumental");
       } finally {
         setIsProcessingB(false);
       }
     }
   };
+
+
 
   const toggleMixerPlay = () => {
     if (isMixerPlaying) {
@@ -165,6 +200,8 @@ function MusicMixer() {
     }
   };
 
+
+
   const handleAutoSync = async () => {
     if (mixerSlotA && mixerSlotB) {
         // Pause playback during sync
@@ -199,13 +236,7 @@ function MusicMixer() {
         setBpmMultiplier(multiplier);
         
         try {
-          console.log('Adjusting BPM with:', {
-            sessionId: mixerSlotB.stems.session_id,
-            targetBPM: targetBPM,
-            originalBPM: bpmInstr,
-            multiplier: multiplier
-          });
-          
+   
           // Request server-side BPM adjustment (time-stretching without pitch change)
           const response = await musicService.adjustBPM(
             mixerSlotB.stems.session_id,
@@ -221,10 +252,8 @@ function MusicMixer() {
           
           const difference = Math.abs(targetBPM - bpmInstr);
           showNotification(`Synced to ${multiplier} vocals (${targetBPM} BPM). Instrumental time-stretched from ${bpmInstr} BPM (Δ${difference})`);
-        } catch (err) {
-          console.error("BPM adjustment failed:", err);
-          console.error("Error details:", err.response?.data);
-          showNotification(`Failed to adjust BPM: ${err.response?.data?.detail || err.message}`);
+        } catch (e) {
+          showNotification("Failed to adjust BPM");
         }
         
         // Clear updating status
@@ -256,17 +285,16 @@ function MusicMixer() {
     setTimeout(() => setIsUpdating(false), 300);
   };
 
-  // Helper: Calculate ms per beat based on BPM
-  const getBeatInterval = (bpm) => {
+
+
+  // Get the current beat interval for snapping
+  const getCurrentBeatInterval = () => {
+    const bpm = detectedBPM || 120; // Default to 120 if no BPM set
     if (!bpm || bpm === 0) return 500; // Default to 120 BPM (500ms per beat)
     return (60000 / bpm); // 60,000 ms per minute / BPM = ms per beat
   };
 
-  // Helper: Get the current beat interval for snapping
-  const getCurrentBeatInterval = () => {
-    const bpm = detectedBPM || 120; // Default to 120 if no BPM set
-    return getBeatInterval(bpm);
-  };
+
 
   // --- ORIGINAL HELPER FUNCTIONS ---
 
@@ -281,6 +309,8 @@ function MusicMixer() {
       default: return sorted;
     }
   };
+
+
 
   const fetchTracks = async (page, query = searchQuery) => {
     if (!query.trim()) return;
@@ -297,13 +327,21 @@ function MusicMixer() {
       const sortedTracks = sortTracks(data.data, sortOption);
       setTracks(sortedTracks);
       setTotalTracks(data.total);
-    } catch (err) {
-      console.error('Search Error:', err);
+      
+      // Cache tracks to localStorage for playlist hydration
+      const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+      sortedTracks.forEach(track => {
+        cachedTracks[track.id] = track;
+      });
+      localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+    } catch (e) {
       setError('Unable to fetch tracks.');
     } finally {
       setIsLoading(false);
     }
   };
+
+
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -312,6 +350,8 @@ function MusicMixer() {
     sessionStorage.setItem('musicMixerSearch', JSON.stringify({ query: searchQuery, page: 1 }));
     await fetchTracks(1, searchQuery);
   };
+
+
 
   const handlePrevPage = async () => {
     if (currentPage > 1) {
@@ -322,6 +362,8 @@ function MusicMixer() {
     }
   };
 
+
+
   const handleNextPage = async () => {
     if (currentPage < totalPages) {
       const newPage = currentPage + 1;
@@ -331,10 +373,14 @@ function MusicMixer() {
     }
   };
 
+
+
   const showNotification = (message) => {
     setNotification(message);
     setTimeout(() => setNotification(null), 3000);
   };
+
+
 
   const handleLikeToggle = async (e, track) => {
     e.stopPropagation();
@@ -348,47 +394,79 @@ function MusicMixer() {
     // Optimistic update: Update UI immediately
     if (isLiked) {
       setLikedTracks(prev => prev.filter(id => id !== track.id));
+      setTrackData(prev => ({
+        ...prev,
+        [track.id]: { ...prev[track.id], isLiked: false }
+      }));
       showNotification("Removed from liked songs");
     } else {
       setLikedTracks(prev => [...prev, track.id]);
+      setTrackData(prev => ({
+        ...prev,
+        [track.id]: { ...prev[track.id], isLiked: true }
+      }));
       showNotification("Added to liked songs");
     }
 
     // Background database update
     try {
       if (isLiked) {
-        await likeService.unlikeTrack(currentUser.uid, track.id);
+        await trackService.unlikeTrack(currentUser.uid, track.id);
       } else {
-        await likeService.likeTrack(currentUser.uid, track);
+        await trackService.likeTrack(currentUser.uid, track);
       }
-    } catch (error) {
-      console.error("Error toggling like:", error);
-      // Rollback on error
+    } catch (e) {
+      // Rollback on error, don't update the like on card visually if not updated on firebase
       if (isLiked) {
         setLikedTracks(prev => [...prev, track.id]);
+        setTrackData(prev => ({
+          ...prev,
+          [track.id]: { ...prev[track.id], isLiked: true }
+        }));
       } else {
         setLikedTracks(prev => prev.filter(id => id !== track.id));
+        setTrackData(prev => ({
+          ...prev,
+          [track.id]: { ...prev[track.id], isLiked: false }
+        }));
       }
-      showNotification("Failed to update like status");
+      showNotification("Failed to update song's like status");
     }
   };
 
+
+
   useEffect(() => {
-    const loadLikedTracks = async () => {
+    const loadTrackData = async () => {
       if (currentUser) {
         try {
-          const liked = await likeService.getLikedTracks(currentUser.uid);
-          const likedIds = liked.map(track => track.trackId);
+          const allTrackData = await trackService.getAllUserTracks(currentUser.uid);
+          setTrackData(allTrackData);
+          const likedIds = Object.entries(allTrackData).filter(([_, data]) => data.isLiked).map(([trackId, _]) => trackId);
           setLikedTracks(likedIds);
-        } catch (error) {
-          console.error("Error loading liked tracks:", error);
+        } catch (e) {
+          showNotification("Failed to load user tracks.");
         }
       } else {
         setLikedTracks([]);
+        setTrackData({});
       }
     };
-    loadLikedTracks();
+    loadTrackData();
   }, [currentUser]);
+
+
+
+  const handleCardClick = (e, trackId) => {
+    if (e.target.closest('button')) return;
+    setFlippedCards(prev => 
+      prev.includes(trackId) 
+        ? prev.filter(id => id !== trackId)
+        : [...prev, trackId]
+    );
+  };
+
+
 
   const handleRightClick = (e, track) => {
     e.preventDefault();
@@ -397,30 +475,70 @@ function MusicMixer() {
     setShowContextMenu(true);
   };
 
-  const addToPlaylist = (playlist, track) => {
+
+
+  const addToPlaylist = async (playlist, track) => {
     const trackExists = playlist.tracks.some((t) => t.id === track.id);
     if (trackExists) {
       showNotification(`"${track.title}" is already in "${playlist.name}"`);
       return;
     }
-    const updatedPlaylists = playlists.map((p) =>
-      p.id === playlist.id
+    
+    // Cache track to localStorage for future hydration
+    const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+    cachedTracks[track.id] = track;
+    localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+    
+    // Update playlists in localStorage
+    const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+    const updatedPlaylists = existing.map((p) =>
+      p.id == playlist.id
         ? { ...p, tracks: [...p.tracks, track], updatedAt: new Date().toISOString() }
         : p
     );
+    
+    // Save to localStorage
+    localStorage.setItem('userPlaylists', JSON.stringify(updatedPlaylists));
+    
+    // Update state
     setPlaylists(updatedPlaylists);
+    
+    // Sync to Firebase immediately if logged in
+    if (currentUser) {
+      try {
+        const { playlistService } = await import('../services/playlistService');
+        await playlistService.savePlaylists(currentUser.uid, updatedPlaylists);
+        console.log('Synced playlists to Firebase');
+      } catch (error) {
+        console.error('Error syncing to Firebase:', error);
+      }
+    }
+    
+    window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: updatedPlaylists } }));
+    
     showNotification(`"${track.title}" added to playlist "${playlist.name}"`);
     setShowPlaylistMenu(false);
     setShowContextMenu(false);
   };
 
-  const handleFinalizeMix = async () => {
+
+
+  const handleFinalizeMix = () => {
     if (!mixerSlotA || !mixerSlotB) {
       showNotification("Please load both decks first!");
       return;
     }
+    // Set default title and show modal for user to save new mix into a playlist
+    setMixTitle(`Mashup: ${mixerSlotA.title} x ${mixerSlotB.title}`);
+    setSelectedPlaylist('');
+    setShowFinalizeModal(true);
+  };
+  
 
-    showNotification("Mixing down... please wait.");
+
+  const confirmFinalizeMix = async () => {
+    showNotification("Mixing, please wait");
+    setShowFinalizeModal(false);
     
     try {
       const result = await musicService.finalizeMix(
@@ -431,65 +549,40 @@ function MusicMixer() {
       
       const newMixTrack = {
         id: `mix_${Date.now()}`,
-        title: result.title || `Mashup: ${mixerSlotA.title} x ${mixerSlotB.title}`,
+        title: mixTitle || `Mashup: ${mixerSlotA.title} x ${mixerSlotB.title}`,
         artist: { name: currentUser?.displayName || "My Custom Mix" },
         album: { 
           cover_small: mixerSlotA.album.cover_small, 
           cover_medium: mixerSlotA.album.cover_medium 
         },
-        duration: 0,
+        duration: Math.max(mixerSlotA.duration || 0, mixerSlotB.duration || 0),
         preview: `${SERVER_URL}${result.mix_url}`,
+        bpm: detectedBPM || Math.max(mixerSlotA.bpm || 0, mixerSlotB.bpm || 0),
         isLocalMix: true
       };
 
-      saveToFinalizedMixes(newMixTrack);
-      saveToRecents(newMixTrack);
+      // Always save to recents first
+      await saveToRecents(newMixTrack);
+      
+      // Then save to selected playlist if it's not recents
+      if (selectedPlaylist && selectedPlaylist !== 'recents') {
+        const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+        const selectedPlaylistObj = existing.find(p => p.id == selectedPlaylist);
+        await saveToPlaylist(selectedPlaylist, newMixTrack);
+        showNotification(`Mix added to Recents and ${selectedPlaylistObj?.name || 'playlist'}!`);
+      } else {
+        showNotification("Mix added to Recents!");
+      }
 
-      showNotification("Mix finalized and added to 'Finalized Mixes' playlist!");
-
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error('Error finalizing mix:', e);
       showNotification("Failed to create mix.");
     }
   };
 
-  const saveToFinalizedMixes = (mixTrack) => {
-    try {
-      const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
-      
-      let finalizedIdx = existing.findIndex(p => p.name === "Finalized Mixes");
-      let finalizedPlaylist;
 
-      if (finalizedIdx === -1) {
-        finalizedPlaylist = {
-          id: 'playlist_finalized_mixes',
-          name: "Finalized Mixes",
-          icon: null, 
-          tracks: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        existing.push(finalizedPlaylist);
-        finalizedIdx = existing.length - 1;
-      } else {
-        finalizedPlaylist = existing[finalizedIdx];
-      }
 
-      finalizedPlaylist.tracks.unshift(mixTrack);
-      finalizedPlaylist.updatedAt = new Date().toISOString();
-
-      existing[finalizedIdx] = finalizedPlaylist;
-      localStorage.setItem('userPlaylists', JSON.stringify(existing));
-
-      window.dispatchEvent(new CustomEvent('playlistsUpdated', {
-        detail: { playlists: existing }
-      }));
-    } catch (error) {
-      console.error('Error saving to Finalized Mixes:', error);
-    }
-  };
-
-  const saveToRecents = (mixTrack) => {
+  const saveToRecents = async (mixTrack) => {
     try {
       const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
       
@@ -510,9 +603,65 @@ function MusicMixer() {
       } else {
         recents = existing[recentsIdx];
       }
-
       if (!recents.tracks.some(t => t.id === mixTrack.id)) {
+        // Cache track to localStorage
+        const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+        cachedTracks[mixTrack.id] = mixTrack;
+        localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+        
         recents.tracks.unshift(mixTrack);
+        recents.updatedAt = new Date().toISOString();
+        
+        existing[recentsIdx] = recents;
+        localStorage.setItem('userPlaylists', JSON.stringify(existing));
+        setPlaylists(existing);
+        
+        // Sync to Firebase
+        if (currentUser) {
+          const { playlistService } = await import('../services/playlistService');
+          await playlistService.savePlaylists(currentUser.uid, existing);
+        }
+        
+        window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: existing } }));
+      }
+    } catch (e) {
+      console.error('Error adding to recents:', e);
+    }
+  };
+  
+
+
+  const addStemmedTrackToRecents = (track) => {
+    try {
+      // Cache track to localStorage for future hydration
+      const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+      cachedTracks[track.id] = track;
+      localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+      
+
+      const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+      
+      let recentsIdx = existing.findIndex(p => p.name === "Recents");
+      let recents;
+
+      if (recentsIdx === -1) {
+        recents = {
+          id: 'playlist_recents',
+          name: "Recents",
+          icon: null, 
+          tracks: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        existing.unshift(recents);
+        recentsIdx = 0;
+      } else {
+        recents = existing[recentsIdx];
+      }
+
+      // Check if track already exists in recents
+      if (!recents.tracks.some(t => t.id === track.id)) {
+        recents.tracks.unshift(track);
         recents.updatedAt = new Date().toISOString();
         
         existing[recentsIdx] = recents;
@@ -522,18 +671,64 @@ function MusicMixer() {
         window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: existing } }));
       }
     } catch (e) {
-      console.error("Error saving to recents:", e);
+      console.error('Error adding stemmed track to recents:', e);
+    }
+  };
+  
+
+
+  const saveToPlaylist = async (playlistId, mixTrack) => {
+    try {
+      // Cache track to localStorage
+      const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+      cachedTracks[mixTrack.id] = mixTrack;
+      localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+      
+
+      const existing = JSON.parse(localStorage.getItem('userPlaylists') || '[]');
+      const playlistIdx = existing.findIndex(p => p.id == playlistId); 
+      
+      if (playlistIdx !== -1) {
+        const playlist = existing[playlistIdx];
+        
+        // Check if track already exists to avoid duplicates
+        if (!playlist.tracks.some(t => t.id === mixTrack.id)) {
+          playlist.tracks.unshift(mixTrack);
+          playlist.updatedAt = new Date().toISOString();
+          existing[playlistIdx] = playlist;
+          localStorage.setItem('userPlaylists', JSON.stringify(existing));
+          setPlaylists(existing);
+          
+          // Sync to Firebase
+          if (currentUser) {
+            const { playlistService } = await import('../services/playlistService');
+            await playlistService.savePlaylists(currentUser.uid, existing);
+          }
+          
+          window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: existing } }));
+        }
+      } else {
+        console.error('Playlist not found:', playlistId);
+        throw new Error('Playlist not found');
+      }
+    } catch (e) {
+      console.error('Error adding to playlist:', e);
+      throw e; 
     }
   };
 
+
+
   // Initialize audio elements with media controls disabled
   useEffect(() => {
-    audioVocalRef.current = new Audio();
-    audioInstrRef.current = new Audio();
-    
-    // Set preload to metadata so currentTime can be set
-    audioVocalRef.current.preload = 'metadata';
-    audioInstrRef.current.preload = 'metadata';
+
+    // Just set preload to metadata so currentTime can be set
+    if (audioVocalRef.current) {
+      audioVocalRef.current.preload = 'metadata';
+    }
+    if (audioInstrRef.current) {
+      audioInstrRef.current.preload = 'metadata';
+    }
     
     // Add event listeners for when either track ends
     const handleTrackEnd = () => {
@@ -544,29 +739,35 @@ function MusicMixer() {
       }
       
       // Pause both tracks
-      audioVocalRef.current.pause();
-      audioInstrRef.current.pause();
+      if (audioVocalRef.current) {
+        audioVocalRef.current.pause();
+      }
+      if (audioInstrRef.current) {
+        audioInstrRef.current.pause();
+      }
       
       // Reset playing state
       setIsMixerPlaying(false);
     };
     
-    audioVocalRef.current.addEventListener('ended', handleTrackEnd);
-    audioInstrRef.current.addEventListener('ended', handleTrackEnd);
+    if (audioVocalRef.current) {
+      audioVocalRef.current.addEventListener('ended', handleTrackEnd);
+    }
+    if (audioInstrRef.current) {
+      audioInstrRef.current.addEventListener('ended', handleTrackEnd);
+    }
     
     return () => {
       if (audioVocalRef.current) {
         audioVocalRef.current.removeEventListener('ended', handleTrackEnd);
-        audioVocalRef.current.pause();
-        audioVocalRef.current.src = '';
       }
       if (audioInstrRef.current) {
         audioInstrRef.current.removeEventListener('ended', handleTrackEnd);
-        audioInstrRef.current.pause();
-        audioInstrRef.current.src = '';
       }
     };
   }, []);
+
+
 
   useEffect(() => {
     setTracks((prevTracks) => sortTracks(prevTracks, sortOption));
@@ -590,7 +791,7 @@ function MusicMixer() {
     if (savedPlaylists) {
       try {
         setPlaylists(JSON.parse(savedPlaylists));
-      } catch (error) { setPlaylists([]); }
+      } catch (e) { setPlaylists([]); }
     }
   }, []);
 
@@ -617,13 +818,31 @@ function MusicMixer() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showContextMenu, showSortDropdown]);
 
+  // Listen for logout events to clear search
+  useEffect(() => {
+    const handleLogout = () => {
+      setSearchQuery('');
+      setTracks([]);
+      setTotalTracks(0);
+      setCurrentPage(1);
+      setError(null);
+      setLikedTracks([]);
+      setTrackData({});
+      setFlippedCards([]);
+      sessionStorage.removeItem('musicMixerSearch');
+    };
 
-  // --- RENDER ---
+    window.addEventListener('userLogout', handleLogout);
+    return () => window.removeEventListener('userLogout', handleLogout);
+  }, []);
+
+
+  // --- Visual Elements ---
   
   return (
     <div className="min-h-screen flex flex-col pt-16 bg-slate-900">
       
-      {/* === MIXER MODULE (Top 70vh) === */}
+      {/* === MIXER MODULE === */}
       <div className="h-[70vh] bg-slate-900 text-white p-6 flex flex-col items-center justify-between relative overflow-hidden">
         
         <h1 className="text-3xl font-bold tracking-widest text-blue-400 mb-4">MUXER LAB</h1>
@@ -649,7 +868,7 @@ function MusicMixer() {
                 <h3 className="mt-6 text-xl font-bold text-center">{mixerSlotA.title}</h3>
                 <p className="text-gray-400">{mixerSlotA.artist.name}</p>
                 <div className="flex gap-1 mt-auto mb-4 h-12 items-end">
-                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-blue-500" style={{height: `${Math.random()*100}%`}}></div>)}
+                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-blue-500" style={{height: `${Math.random() * 100}%`}}></div>)}
                 </div>
               </div>
             ) : (
@@ -686,7 +905,9 @@ function MusicMixer() {
               <img src={isMixerPlaying ? pauseIcon : playIcon} className={`w-8 ${isMixerPlaying ? '' : 'ml-1'}`} alt="Play/Pause" />
             </button>
 
-            {/* Offset Slider */}
+
+
+            {/* Offset Slider, currently set to 20 beat range*/}
             <div className={`w-full bg-slate-800 p-4 rounded-lg border border-gray-700 relative transition-opacity ${!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB ? 'opacity-50' : ''}`}>
                {isUpdating && (
                  <div className="absolute inset-0 bg-slate-900/80 rounded-lg flex items-center justify-center z-10">
@@ -719,6 +940,7 @@ function MusicMixer() {
                />
             </div>
             
+
             <button onClick={handleFinalizeMix} className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all">
               FINALIZE MIX
             </button>
@@ -743,7 +965,7 @@ function MusicMixer() {
                  <h3 className="mt-6 text-xl font-bold text-center">{mixerSlotB.title}</h3>
                  <p className="text-gray-400">{mixerSlotB.artist.name}</p>
                  <div className="flex gap-1 mt-auto mb-4 h-12 items-end">
-                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-red-500" style={{height: `${Math.random()*100}%`}}></div>)}
+                   {[...Array(10)].map((_,i) => <div key={i} className="w-2 bg-red-500" style={{height: `${Math.random() * 100}%`}}></div>)}
                 </div>
               </div>
             ) : (
@@ -754,6 +976,8 @@ function MusicMixer() {
           </div>
         </div>
       </div>
+
+
 
       {/* === SONG GRID MODULE === */}
       <div className={`min-h-[50vh] flex flex-col bg-slate-900 text-white ${currentTrack ? 'pb-[160px]' : 'pb-4'}`}>
@@ -798,58 +1022,39 @@ function MusicMixer() {
 
         {error && <div className="p-8 text-center text-red-400">{error}</div>}
 
+
+
         {/* Grid */}
         <div className={`flex-1 overflow-y-auto p-8 transition-all duration-300 ${isLoading ? 'fade-out' : ''}`}>
           <div className="grid grid-cols-5 gap-6 mb-8">
             {tracks.map((track, index) => (
-              <div
+              <TrackCard
                 key={track.id}
-                className="bg-slate-800 p-4 rounded-lg shadow-md border border-blue-500/20 flex flex-col transition-all duration-200 hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] hover:border-blue-500/50 hover:-translate-y-3 hover:scale-[1.02]"
-                onContextMenu={(e) => handleRightClick(e, track)}
-              >
-                <div className="relative aspect-square mb-3 overflow-hidden rounded-md group">
-                  <img src={track.album.cover_medium} alt={track.title} className="w-full h-full object-cover" />
-                  
-                  {/* Like Button - shows on hover or when liked */}
-                  <button
-                    onClick={(e) => handleLikeToggle(e, track)}
-                    className={`absolute top-2 right-2 z-10 transition-all duration-200 ${
-                      likedTracks.includes(track.id) 
-                        ? 'opacity-100' 
-                        : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
-                    <svg 
-                      className={`w-6 h-6 ${
-                        likedTracks.includes(track.id) 
-                          ? 'fill-pink-500 stroke-pink-500' 
-                          : 'fill-none stroke-white'
-                      } transition-colors duration-200 drop-shadow-lg`}
-                      viewBox="0 0 24 24" 
-                      strokeWidth="2"
-                    >
-                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                    </svg>
-                  </button>
-
-                  <button
-                    onClick={() => playFromQueue(tracks, index)}
-                    className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity"
-                  >
-                     <img className="invert w-10" src={currentTrack?.id === track.id && isPlaying ? pauseIcon : playIcon} alt="Play" />
-                  </button>
-                </div>
-                <h3 className="font-semibold truncate text-white">{track.title}</h3>
-                <p className="text-sm text-gray-400 truncate mb-2">{track.artist.name}</p>
-              </div>
+                track={track}
+                index={index}
+                trackData={trackData[track.id]}
+                isFlipped={flippedCards.includes(track.id)}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onCardClick={handleCardClick}
+                onLikeToggle={handleLikeToggle}
+                onPlayClick={(idx) => playFromQueue(tracks, idx)}
+                onContextMenu={handleRightClick}
+              />
             ))}
           </div>
           {isLoading && <div className="text-center text-gray-400">Loading Tracks...</div>}
         </div>
 
+
+
         {/* Pagination */}
         {totalTracks > 0 && (
-          <div className={`fixed left-0 right-0 z-40 ${currentTrack ? 'bottom-[80px]' : 'bottom-0'}`}>
+          <div className={`fixed left-0 right-0 z-40 transition-all duration-[600ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
+            currentTrack 
+              ? (showMusicBar ? 'bottom-[80px]' : 'bottom-0') 
+              : 'bottom-0'
+          }`}>
             <div className="p-4 border-t border-slate-700 bg-slate-800/95 backdrop-blur-sm shadow-lg flex justify-center gap-4">
                <button onClick={handlePrevPage} disabled={currentPage === 1} className="px-4 py-2 border border-blue-500/30 rounded bg-slate-700 text-white hover:bg-blue-600 hover:border-blue-500 disabled:opacity-50 disabled:hover:bg-slate-700 transition-colors">Previous</button>
                <span className="self-center text-gray-300">Page {currentPage} of {totalPages}</span>
@@ -858,6 +1063,8 @@ function MusicMixer() {
           </div>
         )}
       </div>
+
+
 
       {/* === OVERLAYS === */}
       
@@ -874,6 +1081,7 @@ function MusicMixer() {
           <button onClick={() => { setShowPlaylistMenu(true); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-blue-400 transition-colors">Add to Playlist</button>
         </div>
       )}
+
 
       {/* Playlist Menu */}
       {showPlaylistMenu && selectedTrack && (
@@ -894,10 +1102,80 @@ function MusicMixer() {
         </div>
       )}
 
+
       {/* Notifications */}
       {notification && (
-        <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg shadow-green-500/50 z-50 animate-bounce">
+        <div className="fixed top-10 left-10 bg-blue-800 text-white px-6 py-3 rounded-lg shadow-lg shadow-blue-600 z-50 animate-bounce">
           {notification}
+        </div>
+      )}
+
+
+      {/* Finalize window when user clicks "Finalize" button */}
+      {showFinalizeModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-blue-500/30 rounded-xl shadow-2xl shadow-blue-500/20 p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold text-white mb-4">Finalize Mix</h2>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">Mix Title</label>
+              <input
+                type="text"
+                value={mixTitle}
+                onChange={(e) => setMixTitle(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                placeholder="Enter mix title..."
+              />
+            </div>
+
+            {playlists.length > 0 ? (
+              <div className="mb-6">
+                <label className="block text-sm text-gray-400 mb-2">Save to Playlist</label>
+                <select
+                  value={selectedPlaylist}
+                  onChange={(e) => setSelectedPlaylist(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="">Select a playlist...</option>
+                  {playlists.map((playlist) => (
+                    <option key={playlist.id} value={playlist.id}>
+                      {playlist.name} ({playlist.tracks.length} tracks)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="mb-6 text-center">
+                <p className="text-gray-400 text-sm mb-3">No playlists available</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowFinalizeModal(false)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              {playlists.length > 0 ? (
+                <button
+                  onClick={confirmFinalizeMix}
+                  disabled={!mixTitle.trim()}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirm
+                </button>
+              ) : (
+                <button
+                  onClick={confirmFinalizeMix}
+                  disabled={!mixTitle.trim()}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add to Recents
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,10 +1,14 @@
-// src/services/Services.js
 import axios from "axios";
 
 const DEEZER_BASE_URL = "http://localhost:8080/api/deezer";
 const MIXER_BASE_URL = "http://localhost:8080/api/mixer";
 
+
+
+
 export const musicService = {
+
+
   searchTracks: async (query, page = 1) => {
     try {
       const response = await axios.get(`${DEEZER_BASE_URL}/search`, {
@@ -17,6 +21,8 @@ export const musicService = {
     }
   },
 
+
+
   splitTrack: async (trackUrl) => {
     try {
       const response = await axios.post(`${MIXER_BASE_URL}/split`, {
@@ -28,6 +34,8 @@ export const musicService = {
       throw error;
     }
   },
+
+
 
   adjustBPM: async (sessionId, targetBPM, originalBPM) => {
     try {
@@ -43,12 +51,14 @@ export const musicService = {
     }
   },
 
+
+
   finalizeMix: async (sessionA, sessionB, offsetMs) => {
     try {
       const response = await axios.post(`${MIXER_BASE_URL}/finalize`, {
         session_id_vocals: sessionA,
         session_id_instr: sessionB,
-        offset_ms: offsetMs
+        offset_ms: parseInt(offsetMs) || 0
       });
       return response.data; // Returns { mix_url, title }
     } catch (error) {

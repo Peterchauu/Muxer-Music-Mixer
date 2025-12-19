@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useAudio } from '../context/AudioContext'
+import { useAuth } from '../context/AuthContext'
+import { playlistService } from '../services/playlistService'
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
 
@@ -20,8 +22,15 @@ function Playlists() {
   const [editingPlaylistData, setEditingPlaylistData] = useState(null);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [viewingPlaylist, setViewingPlaylist] = useState(null);
+  const [isHoveringIcon, setIsHoveringIcon] = useState(false);
+  const [showTrackContextMenu, setShowTrackContextMenu] = useState(false);
+  const [trackContextMenuPosition, setTrackContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedTrack, setSelectedTrack] = useState(null);
+  const [showPlaylistSelectionMenu, setShowPlaylistSelectionMenu] = useState(false);
+  const [notification, setNotification] = useState(null);
 
-  const { currentTrack, playTrack, isPlaying } = useAudio();
+  const { currentTrack, playTrack, isPlaying, playFromQueue } = useAudio();
+  const { currentUser } = useAuth();
 
   const handleIconUpload = (event) => {
     const file = event.target.files[0];
@@ -45,35 +54,86 @@ function Playlists() {
   // load playlists from localStorage on component mount
   const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
   
+
+
   useEffect(() => {
-    const savedPlaylists = localStorage.getItem('userPlaylists');
-    if (savedPlaylists) {
-      try {
-        const parsedPlaylists = JSON.parse(savedPlaylists);
-        setPlaylists(parsedPlaylists);
-        console.log('Loaded playlists in Playlists component:', parsedPlaylists.length);
-      } catch (error) {
-        console.error('Error parsing playlists from localStorage in Playlists:', error);
+    const loadPlaylists = async () => {
+      if (currentUser) {
+        try {
+          // First, check localStorage to see if we have recent data
+          const savedPlaylists = localStorage.getItem('userPlaylists');
+          let localPlaylists = [];
+          if (savedPlaylists) {
+            localPlaylists = JSON.parse(savedPlaylists);
+          }
+          
+          // Try to load from Firebase
+          const firebasePlaylists = await playlistService.loadPlaylists(currentUser.uid);
+          
+          if (firebasePlaylists.length > 0) {
+            setPlaylists(firebasePlaylists);
+            // Also save to localStorage for offline access
+            localStorage.setItem('userPlaylists', JSON.stringify(firebasePlaylists));
+          } else if (localPlaylists.length > 0) {
+            // Use localStorage data and sync to Firebase
+            setPlaylists(localPlaylists);
+            // Sync localStorage to Firebase
+            await playlistService.savePlaylists(currentUser.uid, localPlaylists);
+          } else {
+            // No data in either location
+            setPlaylists([]);
+          }
+        } catch (e) {
+          // Fallback to localStorage
+          const savedPlaylists = localStorage.getItem('userPlaylists');
+          if (savedPlaylists) {
+            const parsedPlaylists = JSON.parse(savedPlaylists);
+            setPlaylists(parsedPlaylists);
+          } else {
+            setPlaylists([]);
+          }
+        }
+      } else {
+        // Not logged in, clear playlists
         setPlaylists([]);
       }
-    } else {
-      console.log('No playlists found in localStorage (Playlists component)');
-      setPlaylists([]);
-    }
-    setPlaylistsLoaded(true);
-  }, []);
+      setPlaylistsLoaded(true);
+    };
 
-  // save playlists to localStorage on removal or addition of new playlists
+    loadPlaylists();
+  }, [currentUser]);
+
+
+
+  // save playlists to localStorage and Firebase on removal or addition of new playlists
   useEffect(() => {
-    if (playlistsLoaded) { 
-      localStorage.setItem('userPlaylists', JSON.stringify(playlists));
-      console.log('Saved playlists to localStorage (Playlists component):', playlists.length);
-      
-      window.dispatchEvent(new CustomEvent('playlistsUpdated', {
-        detail: { playlists }
-      }));
-    }
-  }, [playlists, playlistsLoaded]);
+    const syncPlaylists = async () => {
+      // Only sync if playlists have been loaded and there are actual changes
+      if (playlistsLoaded && playlists.length > 0) { 
+        // Save to localStorage
+        localStorage.setItem('userPlaylists', JSON.stringify(playlists));
+        
+        // Sync to Firebase if logged in (debounced)
+        if (currentUser) {
+          // Use a timeout to debounce Firebase writes
+          const timeoutId = setTimeout(async () => {
+            try {
+              await playlistService.savePlaylists(currentUser.uid, playlists);
+            } catch (e) {
+            }
+          }, 500); // Wait 500ms before syncing to Firebase
+          
+          return () => clearTimeout(timeoutId);
+        }
+        
+        window.dispatchEvent(new CustomEvent('playlistsUpdated', {
+          detail: { playlists }
+        }));
+      }
+    };
+
+    syncPlaylists();
+  }, [playlists, playlistsLoaded, currentUser]);
 
 
 
@@ -116,12 +176,12 @@ function Playlists() {
 
 
 
-
-
   const deletePlaylist = (playlistId) => {
     setPlaylists(playlists.filter(playlist => playlist.id !== playlistId));
     setShowContextMenu(false);
   };
+
+
 
   const renamePlaylist = (playlistId, newName) => {
     if (newName.trim()) {
@@ -134,12 +194,16 @@ function Playlists() {
     }
   };
 
+
+
   const handleRightClick = (e, playlist) => {
     e.preventDefault();
     setSelectedPlaylist(playlist);
     setContextMenuPosition({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
   };
+
+
 
   const editPlaylist = (playlist) => {
     setEditingPlaylistData(playlist);
@@ -150,9 +214,77 @@ function Playlists() {
     setShowContextMenu(false);
   };
 
+
+
   const openPlaylist = (playlist) => {
     setViewingPlaylist(playlist);
     setShowPlaylistModal(true);
+  };
+
+
+
+  const playPlaylist = (e, playlist) => {
+    e.stopPropagation();
+    if (playlist.tracks.length > 0) {
+      playFromQueue(playlist.tracks, 0);
+    }
+  };
+
+
+
+  const handleTrackRightClick = (e, track) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedTrack(track);
+    setTrackContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setShowTrackContextMenu(true);
+  };
+
+
+
+  const addTrackToPlaylist = (targetPlaylist, track) => {
+    // Don't add to the same playlist it's already in
+    if (viewingPlaylist && targetPlaylist.id === viewingPlaylist.id) {
+      showNotification(`Track is already in "${targetPlaylist.name}"`);
+      setShowPlaylistSelectionMenu(false);
+      setShowTrackContextMenu(false);
+      return;
+    }
+
+
+
+    const trackExists = targetPlaylist.tracks.some((t) => t.id === track.id);
+    if (trackExists) {
+      showNotification(`"${track.title}" is already in "${targetPlaylist.name}"`);
+      setShowPlaylistSelectionMenu(false);
+      setShowTrackContextMenu(false);
+      return;
+    }
+
+
+
+    // Cache track to localStorage for future hydration
+    const cachedTracks = JSON.parse(localStorage.getItem('cachedTracks') || '{}');
+    cachedTracks[track.id] = track;
+    localStorage.setItem('cachedTracks', JSON.stringify(cachedTracks));
+
+    const updatedPlaylists = playlists.map((p) =>
+      p.id === targetPlaylist.id
+        ? { ...p, tracks: [...p.tracks, track], updatedAt: new Date().toISOString() }
+        : p
+    );
+    setPlaylists(updatedPlaylists);
+    localStorage.setItem('userPlaylists', JSON.stringify(updatedPlaylists));
+    window.dispatchEvent(new CustomEvent('playlistsUpdated', { detail: { playlists: updatedPlaylists } }));
+    
+    showNotification(`"${track.title}" added to "${targetPlaylist.name}"`);
+    setShowPlaylistSelectionMenu(false);
+    setShowTrackContextMenu(false);
+  };
+
+  const showNotification = (message) => {
+    setNotification(message);
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const removeSongFromPlaylist = (playlistId, trackId) => {
@@ -174,18 +306,20 @@ function Playlists() {
     }
   };
 
-  const handleClickOutside = () => {
+  const handleClickOutside = useCallback(() => {
     setShowContextMenu(false);
     setEditingPlaylist(null);
-  };
+    setShowTrackContextMenu(false);
+    setShowPlaylistSelectionMenu(false);
+  }, []);
 
   // close context menu when clicking outside
   useEffect(() => {
-    if (showContextMenu) {
+    if (showContextMenu || showTrackContextMenu || showPlaylistSelectionMenu) {
       document.addEventListener('click', handleClickOutside);
       return () => document.removeEventListener('click', handleClickOutside);
     }
-  }, [showContextMenu]);
+  }, [showContextMenu, showTrackContextMenu, showPlaylistSelectionMenu, handleClickOutside]);
 
   // concurrency with localstorage across webpages
   useEffect(() => {
@@ -201,17 +335,17 @@ function Playlists() {
               setViewingPlaylist(updatedViewingPlaylist);
             }
           }
-        } catch (error) {
-          console.error('Error parsing updated playlists from storage:', error);
+        } catch (e) {
+          console.error('Error parsing updated playlists from storage:', e);
         }
       }
     };
+
 
     // Also listen for custom events for same-page communication
     const handlePlaylistUpdate = (event) => {
       const { playlists: updatedPlaylists } = event.detail;
       setPlaylists(updatedPlaylists);
-      console.log('Updated playlists from custom event in Playlists:', updatedPlaylists.length);
       
       if (viewingPlaylist) {
         const updatedViewingPlaylist = updatedPlaylists.find(p => p.id === viewingPlaylist.id);
@@ -221,9 +355,13 @@ function Playlists() {
       }
     };
 
+
+
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('playlistsUpdated', handlePlaylistUpdate);
     
+
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('playlistsUpdated', handlePlaylistUpdate);
@@ -241,7 +379,7 @@ function Playlists() {
                 YOUR PLAYLISTS
               </h1>
               <p className="text-gray-400">
-                Manage and organize your tracks
+                Just to keep you organized
               </p>
             </div>
 
@@ -250,17 +388,13 @@ function Playlists() {
 
             <button
               onClick={() => setShowCreateModal(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium 
-                       hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] transition-all flex items-center gap-2"
+              className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Create New Playlist
             </button>
-
-
-
           </div>
         </div>
       </div>
@@ -283,7 +417,7 @@ function Playlists() {
               <div
                 key={playlist.id}
                 className="bg-slate-800 p-6 rounded-xl shadow-md border border-blue-500/20 
-                         hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] hover:border-blue-500/50 transition-all duration-200 cursor-pointer"
+                         hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] hover:border-blue-500/50 transition-all duration-200 cursor-pointer relative group"
                 onClick={() => openPlaylist(playlist)}
                 onContextMenu={(e) => handleRightClick(e, playlist)}
               >
@@ -302,6 +436,20 @@ function Playlists() {
                     </svg>
                   )}
                 </div>
+                
+                {/* Play button - appears on hover */}
+                {playlist.tracks.length > 0 && (
+                  <button
+                    onClick={(e) => playPlaylist(e, playlist)}
+                    className="absolute bottom-24 right-8 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center
+                             opacity-0 group-hover:opacity-100 transition-opacity duration-200
+                             hover:bg-blue-500 hover:scale-110 shadow-lg shadow-blue-500/50 z-10"
+                  >
+                    <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                )}
                 
                 {editingPlaylist === playlist.id ? (
                   <input
@@ -415,21 +563,7 @@ function Playlists() {
                   </button>
                 )}
               </div>
-
-              {/* preview of imported image*/}
-              {iconPreview && (
-                <div className="mt-4 flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-lg border border-blue-500/30 overflow-hidden bg-slate-700">
-                    <img
-                      src={iconPreview}
-                      alt="Icon preview"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
-
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => {
@@ -446,8 +580,8 @@ function Playlists() {
               <button
                 onClick={createPlaylist}
                 disabled={!newPlaylistName.trim()}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] 
-                         transition-all disabled:bg-gray-600 disabled:cursor-not-allowed"
+                className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all
+                         disabled:bg-gray-600/20 disabled:text-gray-500 disabled:border-gray-600/50 disabled:cursor-not-allowed"
               >
                 {editingPlaylistData ? 'Save Changes' : 'Create'}
               </button>
@@ -462,7 +596,7 @@ function Playlists() {
 
 
 
-      {/* Context Menu */}
+      {/* Overlay options when right-clicked on playlist */}
       {showContextMenu && selectedPlaylist && (
         <div
           className="fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50"
@@ -487,6 +621,10 @@ function Playlists() {
           </button>
         </div>
       )}
+
+
+
+
 
       {/* playlist view menu */}
       {showPlaylistModal && viewingPlaylist && (
@@ -539,14 +677,21 @@ function Playlists() {
                   <h3 className="text-lg font-medium text-gray-400 mb-2">No tracks in this playlist</h3>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="max-h-96 overflow-y-auto">
                   {viewingPlaylist.tracks.map((track, index) => (
                     <div
                       key={track.id}
-                      className="flex items-center p-3 hover:bg-slate-700 rounded-lg transition-colors group"
+                      className={`flex items-center p-3 rounded-lg transition-colors group ${
+                        currentTrack?.id === track.id 
+                          ? 'bg-blue-600/20 border-blue-500' 
+                          : 'hover:bg-slate-700'
+                      }`}
+                      onContextMenu={(e) => handleTrackRightClick(e, track)}
                     >
                       {/* track Number */}
-                      <div className="w-8 text-center text-sm text-gray-400 mr-3">
+                      <div className={`w-8 text-center text-sm mr-3 ${
+                        currentTrack?.id === track.id ? 'text-blue-400 font-bold' : 'text-gray-400'
+                      }`}>
                         {index + 1}
                       </div>
 
@@ -558,7 +703,13 @@ function Playlists() {
                           className="w-full h-full object-cover"
                         />
                         <button
-                          onClick={() => playTrack(track)}
+                          onClick={() => {
+                            if (currentTrack?.id === track.id) {
+                              playTrack(track); // Toggle play/pause if same track
+                            } else {
+                              playFromQueue(viewingPlaylist.tracks, index); // Play from this track in playlist queue
+                            }
+                          }}
                           className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center 
                                    opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                         >
@@ -578,7 +729,10 @@ function Playlists() {
 
                       {/* duration */}
                       <div className="text-sm text-gray-400 mr-4">
-                        {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+                        {track.duration 
+                          ? `${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, '0')}`
+                          : '--:--'
+                        }
                       </div>
 
 
@@ -602,6 +756,58 @@ function Playlists() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Track Context Menu */}
+      {showTrackContextMenu && selectedTrack && (
+        <div
+          className="fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50"
+          style={{ left: trackContextMenuPosition.x, top: trackContextMenuPosition.y, minWidth: '180px' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={(e) => { 
+              e.stopPropagation();
+              setShowPlaylistSelectionMenu(true);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-blue-400 transition-colors"
+          >
+            Add to Playlist
+          </button>
+        </div>
+      )}
+
+      {/* Playlist Selection Menu */}
+      {showPlaylistSelectionMenu && selectedTrack && (
+        <div
+          className="fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50 max-h-64 overflow-y-auto"
+          style={{ left: trackContextMenuPosition.x + 180, top: trackContextMenuPosition.y, minWidth: '200px' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {playlists.filter(p => viewingPlaylist ? p.id !== viewingPlaylist.id : true).length === 0 ? (
+            <div className="px-4 py-2 text-sm text-gray-400">No other playlists available</div>
+          ) : (
+            playlists
+              .filter(p => viewingPlaylist ? p.id !== viewingPlaylist.id : true)
+              .map((playlist) => (
+                <button
+                  key={playlist.id}
+                  onClick={() => addTrackToPlaylist(playlist, selectedTrack)}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-blue-600/20 hover:text-blue-400 transition-colors"
+                >
+                  <div className="font-medium text-white">{playlist.name}</div>
+                  <div className="text-xs text-gray-400">{playlist.tracks.length} tracks</div>
+                </button>
+              ))
+          )}
+        </div>
+      )}
+
+      {/* Notifications */}
+      {notification && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg shadow-green-500/50 z-50 animate-bounce">
+          {notification}
         </div>
       )}
     </div>
