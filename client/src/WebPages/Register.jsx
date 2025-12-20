@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { ref, set } from "firebase/database";
 
 
-// Requirement 2 fulfilled
+// Requirement 2 fulfilled (2/2)
 
 function Register () {
     const [email, setEmail] = useState("")
@@ -48,7 +48,7 @@ function Register () {
         }
     }
 
-    {/* Requirement 4 fulfilled (2/2) */}
+    // Requirement 4 fulfilled (2/2)
 
     return (
         <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">

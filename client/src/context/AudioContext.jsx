@@ -1,5 +1,6 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+
+// Requirement 17 fulfilled (2/2)
 
 const AudioContext = createContext(null);
 
@@ -40,7 +41,6 @@ export function AudioProvider({ children }) {
       setShowMusicBar(true);
       lastActivityTimeRef.current = Date.now();
 
-      // Set new timeout to hide after 5 seconds
       hideTimeoutRef.current = setTimeout(() => {
         setShowMusicBar(false);
       }, 5000);
@@ -73,7 +73,6 @@ export function AudioProvider({ children }) {
 
     const handleEnded = () => {
       setIsPlaying(false);
-      // later we can auto-advance: playNext();
     };
 
     const handlePlay = () => {
@@ -156,7 +155,6 @@ export function AudioProvider({ children }) {
     startTrack(track);
   };
 
-  // ✅ play from a specific list + index (search results, playlists, etc.)
   const playFromQueue = (tracks, startIndex) => {
     if (!Array.isArray(tracks) || tracks.length === 0) return;
 

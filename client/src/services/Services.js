@@ -4,8 +4,6 @@ const DEEZER_BASE_URL = "http://localhost:8080/api/deezer";
 const MIXER_BASE_URL = "http://localhost:8080/api/mixer";
 
 
-
-
 export const musicService = {
 
 
@@ -60,7 +58,9 @@ export const musicService = {
         session_id_instr: sessionB,
         offset_ms: parseInt(offsetMs) || 0
       });
-      return response.data; // Returns { mix_url, title }
+
+      // returns { mix_url, title }
+      return response.data; 
     } catch (error) {
       console.error("Error creating mix:", error);
       throw error;

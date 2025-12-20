@@ -56,7 +56,7 @@
   transition: bottom 0.5s ease-out;
 }
 
-/* 3D Flip Card Styles */
+/* Flip card styles */
 .flip-card {
   perspective: 1000px;
   width: 100%;

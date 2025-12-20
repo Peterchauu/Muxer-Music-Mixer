@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { musicService } from '../services/Services';
 import { trackService } from '../services/trackService';
 import { useAudio } from '../context/AudioContext';
@@ -40,7 +40,7 @@ function MusicMixer() {
 
   const { currentTrack, isPlaying, playFromQueue, showMusicBar } = useAudio();
 
-  // --- load MIXER state from context ---
+  // load MIXER state from context 
   const {
     mixerSlotA,
     setMixerSlotA,
@@ -64,7 +64,7 @@ function MusicMixer() {
   const [isProcessingB, setIsProcessingB] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // --- Mixer Logic ---
+  // --------- Mixer Logic ------------
 
   const loadIntoMixer = async (track, slot) => {
     // Use preview URL or full URL if available
@@ -198,7 +198,7 @@ function MusicMixer() {
     }
   };
 
-
+  // Requirement 20 fulfilled (1/2)
 
   const handleAutoSync = async () => {
     if (mixerSlotA && mixerSlotB) {
@@ -294,7 +294,9 @@ function MusicMixer() {
 
 
 
-  // --- ORIGINAL HELPER FUNCTIONS ---
+  // ---------- Helper functions -----------
+
+  // Requirement 8 fulfilled (1/2)
 
   const sortTracks = (tracksArray, option) => {
     if (!tracksArray) return [];
@@ -389,7 +391,7 @@ function MusicMixer() {
 
     const isLiked = likedTracks.includes(track.id);
     
-    // Optimistic update: Update UI immediately
+    // Update UI immediately
     if (isLiked) {
       setLikedTracks(prev => prev.filter(id => id !== track.id));
       setTrackData(prev => ({
@@ -533,6 +535,7 @@ function MusicMixer() {
   };
   
 
+  // Requirement 16 fulfilled
 
   const confirmFinalizeMix = async () => {
     showNotification("Mixing, please wait");
@@ -578,7 +581,7 @@ function MusicMixer() {
     }
   };
 
-
+  // Requirement 19 fulfilled (1/3)
 
   const saveToRecents = async (mixTrack) => {
     try {
@@ -628,6 +631,7 @@ function MusicMixer() {
   };
   
 
+  // Requirement 19 fulfilled (2/3)
 
   const addStemmedTrackToRecents = (track) => {
     try {
@@ -717,6 +721,8 @@ function MusicMixer() {
 
 
 
+
+
   // Initialize audio elements with media controls disabled
   useEffect(() => {
 
@@ -766,10 +772,10 @@ function MusicMixer() {
   }, []);
 
 
-
   useEffect(() => {
     setTracks((prevTracks) => sortTracks(prevTracks, sortOption));
   }, [sortOption]);
+
 
   useEffect(() => {
     const savedSearchState = sessionStorage.getItem('musicMixerSearch');
@@ -783,6 +789,7 @@ function MusicMixer() {
     }
   }, []);
 
+
   // Playlist Loading
   useEffect(() => {
     const savedPlaylists = localStorage.getItem('userPlaylists');
@@ -793,6 +800,7 @@ function MusicMixer() {
     }
   }, []);
 
+
   // Playlist Saving
   useEffect(() => {
     if (playlists.length > 0) {
@@ -801,7 +809,8 @@ function MusicMixer() {
     }
   }, [playlists]);
 
-  // Click Outside Listener
+
+  // Listens if user clicks outside to close any overlays
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (showContextMenu && !event.target.closest('.context-menu')) {
@@ -816,6 +825,7 @@ function MusicMixer() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showContextMenu, showSortDropdown]);
 
+
   // Listen for logout events to clear search
   useEffect(() => {
     const handleLogout = () => {
@@ -829,25 +839,24 @@ function MusicMixer() {
       setFlippedCards([]);
       sessionStorage.removeItem('musicMixerSearch');
     };
-
     window.addEventListener('userLogout', handleLogout);
     return () => window.removeEventListener('userLogout', handleLogout);
   }, []);
 
 
-  // --- Visual Elements ---
+  // ------------ Visual Elements -------------
   
   return (
     <div className="min-h-screen flex flex-col pt-16 bg-slate-900">
       
-      {/* === MIXER MODULE === */}
+      {/* -------------- Mixer Module ------------ */}
       <div className="h-[70vh] bg-slate-900 text-white p-6 flex flex-col items-center justify-between relative overflow-hidden">
         
         <h1 className="text-3xl font-bold tracking-widest text-blue-400 mb-4">MUXER LAB</h1>
 
         <div className="flex w-full h-full gap-8 justify-center items-center">
           
-          {/* DECK A: VOCALS */}
+          {/* Deck A: vocals */}
           <div className="w-1/3 h-[80%] bg-slate-800 rounded-xl border-2 border-blue-500/30 p-4 flex flex-col relative">
             <div className="absolute -top-3 left-4 bg-blue-600 px-3 text-xs font-bold rounded">VOCALS SOURCE</div>
             
@@ -876,9 +885,12 @@ function MusicMixer() {
             )}
           </div>
 
-          {/* CONTROLS CENTER */}
+          {/* Mixer controls */}
           <div className="w-1/4 flex flex-col items-center gap-6 z-10">
             
+
+            {/* Requirement 20 fulfilled (2/2) */}
+
             {/* BPM Display */}
             <div className={`bg-slate-800 p-4 rounded-lg border border-green-700 text-center w-full transition-opacity ${!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB ? 'opacity-50' : ''}`}>
                <div className="text-xs text-gray-400 uppercase tracking-wider">Master Tempo {bpmMultiplier !== "1x" && <span className="text-amber-400">({bpmMultiplier})</span>}</div>
@@ -904,8 +916,9 @@ function MusicMixer() {
             </button>
 
 
+            {/* Requirement 11 fulfilled */}
 
-            {/* Offset Slider, currently set to 20 beat range*/}
+            {/* Offset Slider, currently defaulted to 20 beat range*/}
             <div className={`w-full bg-slate-800 p-4 rounded-lg border border-gray-700 relative transition-opacity ${!mixerSlotA || !mixerSlotB || isProcessingA || isProcessingB ? 'opacity-50' : ''}`}>
                {isUpdating && (
                  <div className="absolute inset-0 bg-slate-900/80 rounded-lg flex items-center justify-center z-10">
@@ -944,7 +957,7 @@ function MusicMixer() {
             </button>
           </div>
 
-          {/* DECK B: INSTRUMENTAL */}
+          {/* Deck B: instrumental/accompaniment */}
           <div className="w-1/3 h-[80%] bg-slate-800 rounded-xl border-2 border-red-500/30 p-4 flex flex-col relative">
             <div className="absolute -top-3 right-4 bg-red-600 px-3 text-xs font-bold rounded">INSTRUMENTAL SOURCE</div>
             
@@ -976,10 +989,14 @@ function MusicMixer() {
       </div>
 
 
+      {/* Requirement 9 fulfilled */}
 
-      {/* === SONG GRID MODULE === */}
+      {/* ------------ song grid -------------- */}
       <div className={`min-h-[50vh] flex flex-col bg-slate-900 text-white ${currentTrack ? 'pb-[160px]' : 'pb-4'}`}>
         
+
+        {/* Requirement 7 fulfilled */}
+
         {/* Search Bar */}
         <div className="p-6 bg-slate-800 border-b border-slate-700">
           <div className="flex justify-center items-center gap-4">
@@ -992,6 +1009,9 @@ function MusicMixer() {
                 className="w-full px-6 py-3 border border-blue-500/30 rounded-full bg-slate-700 text-white placeholder-gray-400 hover:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 shadow-md hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] focus:shadow-[0_0_30px_rgba(59,130,246,0.5)] transition-all"
               />
             </form>
+
+
+            {/* Requirement 8 fulfilled (2/2) */}
 
             <div className="relative">
               <button
@@ -1044,7 +1064,7 @@ function MusicMixer() {
           {isLoading && <div className="text-center text-gray-400">Loading Tracks...</div>}
         </div>
 
-
+        {/* Requirement 10 fulfilled */}
 
         {/* Pagination */}
         {totalTracks > 0 && (
@@ -1064,7 +1084,7 @@ function MusicMixer() {
 
 
 
-      {/* === OVERLAYS === */}
+      {/* -------- Overlays ---------- */}
       
       {/* Context Menu */}
       {showContextMenu && selectedTrack && (
@@ -1072,6 +1092,10 @@ function MusicMixer() {
           className="context-menu fixed bg-slate-800 border border-blue-500/30 rounded-lg shadow-lg shadow-blue-500/20 py-2 z-50"
           style={{ left: contextMenuPosition.x, top: contextMenuPosition.y, minWidth: '180px' }}
         >
+
+
+          {/* Requirement 12 fulfilled */}
+
           <div className="px-4 py-1 text-xs text-gray-400 font-bold border-b border-slate-700 mb-1">LOAD TO MUXER</div>
           <button onClick={() => { loadIntoMixer(selectedTrack, 'A'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-blue-600/20 text-blue-400 font-medium transition-colors">Set as Vocals</button>
           <button onClick={() => { loadIntoMixer(selectedTrack, 'B'); setShowContextMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-600/20 text-red-400 font-medium transition-colors">Set as Melody</button>
@@ -1164,6 +1188,9 @@ function MusicMixer() {
                   Confirm
                 </button>
               ) : (
+
+
+                // Requirement 19 fulfilled (3/3)
                 <button
                   onClick={confirmFinalizeMix}
                   disabled={!mixTitle.trim()}

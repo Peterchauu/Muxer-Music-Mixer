@@ -5,7 +5,7 @@ import { auth, db } from "../services/firebaseInit";
 import { ref, get, set, update } from "firebase/database";
 
 
-// Requirement 3 fulfilled
+// Requirement 3 fulfilled (2/2)
 
 function getFriendlyErrorMessage(error) {
   // Fall back if we don't get a proper error object
@@ -123,7 +123,7 @@ function SignIn() {
 
       {/* Requirement 4 fulfilled (1/2) */}
 
-      <div className={`flex justify-center items-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ${showForgotPassword ? "blur-sm" : ""}`}>
+      <div className={`flex justify-center items-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900`}>
         <form onSubmit={handleSubmit} className="bg-slate-800 p-8 rounded-lg shadow-[0_0_30px_rgba(59,130,246,0.3)] w-96 border border-blue-500/30">
           <h2 className="text-2xl font-bold mb-6 text-center text-white">Sign In</h2>
 
@@ -179,7 +179,7 @@ function SignIn() {
       {/* forgot password menu */}
       {showForgotPassword && (
         <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-          <div className="bg-slate-800 border border-blue-500/30 p-8 rounded-lg shadow-[0_0_50px_rgba(59,130,246,0.5)] w-96 mx-4">
+          <div className="bg-slate-800 border border-blue-500/30 p-8 rounded-lg w-100">
             <h3 className="text-xl font-bold mb-4 text-center text-white">Reset Password</h3>
             <form onSubmit={handleResetSubmit}>
               <label className="block mb-4">

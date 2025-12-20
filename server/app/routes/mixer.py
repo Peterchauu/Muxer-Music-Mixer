@@ -16,7 +16,6 @@ import warnings
 import subprocess
 
 
-
 router = APIRouter()
 executor = ThreadPoolExecutor(max_workers=2)
 BASE_DIR = Path(__file__).resolve().parent.parent  
@@ -30,10 +29,8 @@ RUBBERBAND_EXE = RUBBERBAND_DIR / "rubberband.exe"
 _demucs_model = None
 
 
-
-
 def get_demucs_model():
-    """Lazy-load Demucs model on first use"""
+    # load Demucs model on first use
     global _demucs_model
     if _demucs_model is None:
         _demucs_model = get_model('htdemucs')
@@ -43,7 +40,7 @@ def get_demucs_model():
 
 
 
-# --- REQUEST MODELS ---
+# -------- requests to model ---------
 class SplitRequest(BaseModel):
     track_url: str
 
@@ -59,10 +56,11 @@ class MixRequest(BaseModel):
     
     
 
-# --- HELPERS ---
+# -------- helper functions ----------
 
 def get_bpm(file_path):
-    """Detects BPM using Librosa"""
+    
+    # Determines BPM using Librosa
     warnings.filterwarnings('ignore')
     
     try:
@@ -85,7 +83,7 @@ def process_demucs_separation(wav_path, session_dir, model):
         resampler = torchaudio.transforms.Resample(sr, model.samplerate)
         waveform = resampler(waveform)
     
-    # Ensure stereo (2 channels)
+    # Make sure there are only 2 stereo channels
     if waveform.shape[0] == 1:
         waveform = waveform.repeat(2, 1)
     elif waveform.shape[0] > 2:
@@ -124,7 +122,7 @@ def process_demucs_separation(wav_path, session_dir, model):
 
 
 
-# --- ROUTES ---
+# -------- Routes ---------
 
 @router.post("/split")
 async def split_track(body: SplitRequest):
@@ -134,7 +132,7 @@ async def split_track(body: SplitRequest):
     
     input_path = session_dir / "source.mp3"
 
-    # 1. Download
+    # Download
     try:
         resp = requests.get(body.track_url, timeout=30)
         resp.raise_for_status()
@@ -142,7 +140,7 @@ async def split_track(body: SplitRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Download failed: {e}")
 
-    # 2. Convert MP3 to WAV
+    # Convert MP3 to WAV
     try:
         warnings.filterwarnings('ignore')
         audio_segment = AudioSegment.from_file(str(input_path))
@@ -151,10 +149,10 @@ async def split_track(body: SplitRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio conversion failed: {e}")
 
-    # 3. Get BPM
+    # Get BPM
     bpm = get_bpm(wav_path)
 
-    # 4. Demucs Separation in thread pool
+    # Demucs separation in thread pool
     try:
         model = get_demucs_model()
         loop = asyncio.get_event_loop()
@@ -172,22 +170,21 @@ async def split_track(body: SplitRequest):
 
 
 
-def process_bpm_adjustment(instrumental_path, adjusted_path, ratio, sr):
-    """CPU-intensive time-stretching using RubberBand CLI - runs in thread pool"""
+def process_bpm_adjustment(instrumental_path, adjusted_path, ratio):
+    
+    # CPU-intensive time-stretching using RubberBand CLI - runs in thread pool
     # Calculate tempo change percentage (RubberBand uses tempo ratio)
     # ratio = target_bpm / original_bpm
     # e.g., 1.1 = speed up by 10%, 0.9 = slow down by 10%
     
-    # Build RubberBand command
     cmd = [
         str(RUBBERBAND_EXE),
-        "--tempo", str(ratio),  # Tempo change ratio
-        "--pitch-hq",           # High quality pitch preservation
+        "--tempo", str(ratio),
+        "--pitch-hq",
         str(instrumental_path),
         str(adjusted_path)
     ]
     
-    # Run RubberBand CLI
     result = subprocess.run(cmd, capture_output=True, text=True)
     
     if result.returncode != 0:
@@ -196,12 +193,10 @@ def process_bpm_adjustment(instrumental_path, adjusted_path, ratio, sr):
 
 
 
-
-
-
 @router.post("/adjust-bpm")
 async def adjust_bpm(body: AdjustBPMRequest):
-    """Time-stretch audio to match target BPM without pitch distortion"""
+    
+    # Time-stretch audio to match target BPM without pitch distortion
     try:
         instrumental_path = STEMS_DIR / body.session_id / "instrumental.wav"
         
@@ -214,7 +209,7 @@ async def adjust_bpm(body: AdjustBPMRequest):
         # Run time-stretching in thread pool
         adjusted_path = STEMS_DIR / body.session_id / "instrumental_adjusted.wav"
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(executor, process_bpm_adjustment, instrumental_path, adjusted_path, ratio, None)
+        await loop.run_in_executor(executor, process_bpm_adjustment, instrumental_path, adjusted_path, ratio)
         
         return {
             "adjusted_url": f"/stems/{body.session_id}/instrumental_adjusted.wav",
@@ -227,7 +222,8 @@ async def adjust_bpm(body: AdjustBPMRequest):
 
 @router.post("/finalize")
 async def finalize_mix(body: MixRequest):
-    """Merges Vocal and Instrumental with Offset"""
+    
+    # Merges Vocal and Instrumental with Offset
     try:
         # Paths
         vocal_path = STEMS_DIR / body.session_id_vocals / "vocals.wav"

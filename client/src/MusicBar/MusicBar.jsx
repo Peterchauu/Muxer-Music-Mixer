@@ -5,7 +5,7 @@ import pauseIcon from '../assets/pause-solid-full.svg'
 import forwardIcon from '../assets/forward-solid-full.svg'
 
 
-// Requirement 17 fulfilled
+// Requirement 17 fulfilled (1/2)
 
 function MusicBar() {
     const { 

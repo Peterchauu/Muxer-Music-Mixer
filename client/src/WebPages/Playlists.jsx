@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAudio } from '../context/AudioContext'
 import { useAuth } from '../context/AuthContext'
 import { playlistService } from '../services/playlistService'
@@ -241,6 +241,7 @@ function Playlists() {
   };
 
 
+  // Requirement 15 fulfilled (1/3)
 
   const addTrackToPlaylist = (targetPlaylist, track) => {
     // Don't add to the same playlist it's already in
@@ -737,7 +738,7 @@ function Playlists() {
 
 
 
-                    {/* Requirement 15 fulfilled (2/2) */}
+                    {/* Requirement 15 fulfilled (2/3) */}
 
                       {/* remove Button */}
                       <button
@@ -766,6 +767,9 @@ function Playlists() {
           style={{ left: trackContextMenuPosition.x, top: trackContextMenuPosition.y, minWidth: '180px' }}
           onClick={(e) => e.stopPropagation()}
         >
+
+          {/* Requirement 15 fulfilled (3/3)*/}
+
           <button
             onClick={(e) => { 
               e.stopPropagation();

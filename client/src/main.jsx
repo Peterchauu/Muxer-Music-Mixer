@@ -10,7 +10,7 @@ import './index.css'
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider> {/* 2. Wrap AuthProvider around the inner components */}
+      <AuthProvider>
         <AudioProvider>
           <MixerProvider>
             <App />

@@ -2,8 +2,6 @@ import { db } from "./firebaseInit";
 import { ref, set, get, child, remove } from "firebase/database";
 
 
-
-
 export const playlistService = {
 
 
@@ -17,12 +15,12 @@ export const playlistService = {
 
       const playlistsRef = ref(db, `users/${userId}/playlists`);
       
-      // Transform playlists to only include track IDs
+      // Playlist data skeleton format to send to firebase, storing tracks using only their IDs
       const playlistsData = playlists.map(playlist => ({
         id: playlist.id,
         name: playlist.name,
         icon: playlist.icon || null,
-        trackIds: (playlist.tracks || []).map(track => track.id), // Only store track IDs
+        trackIds: (playlist.tracks || []).map(track => track.id),
         createdAt: playlist.createdAt,
         updatedAt: playlist.updatedAt
       }));
@@ -36,7 +34,7 @@ export const playlistService = {
 
 
 
-  // Load playlists from Firebase adn localstorage
+  // Load playlists from Firebase and localstorage
   loadPlaylists: async (userId) => {
     try {
       const dbRef = ref(db);

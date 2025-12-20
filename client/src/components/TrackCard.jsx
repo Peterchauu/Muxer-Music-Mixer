@@ -1,4 +1,3 @@
-import React from 'react';
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
 
@@ -28,6 +27,8 @@ function TrackCard({
           <div className="relative aspect-square mb-3 overflow-hidden rounded-md group">
             <img src={track.album.cover_medium} alt={track.title} className="w-full h-full object-cover pointer-events-none" />
             
+            {/* Requirement 6 fulfilled */}
+
             {/* Like Button - shows on hover or when liked */}
             <button
               onClick={(e) => onLikeToggle(e, track)}
@@ -65,12 +66,15 @@ function TrackCard({
           <p className="text-sm text-gray-400 truncate mb-2 pointer-events-none">{track.artist.name}</p>
         </div>
 
-        {/* Back of card - Usage Statistics */}
+
+        {/* Requirement 18 fulfilled */}
+
+        {/* Back of card showing usage statistics for a specific user account */}
         <div className="flip-card-back bg-slate-800 p-4 rounded-lg shadow-md border border-blue-500/20 flex flex-col justify-center items-center transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] hover:border-blue-500/50 hover:-translate-y-2 hover:scale-[1.01]">
           <h3 className="font-semibold text-white mb-4 text-center pointer-events-none">Usage Statistics</h3>
-          
           <div className="w-full space-y-3 pointer-events-none">
-            {/* Vocals Usage */}
+
+            {/* how many times song used as vocals */}
             <div className="bg-blue-900/30 border border-blue-500/30 rounded-lg p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
@@ -84,7 +88,7 @@ function TrackCard({
               </div>
             </div>
 
-            {/* Instrumental Usage */}
+            {/* how many times song used as instrumentals */}
             <div className="bg-red-900/30 border border-red-500/30 rounded-lg p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">

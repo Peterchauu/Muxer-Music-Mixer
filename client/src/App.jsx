@@ -1,4 +1,3 @@
-import React from 'react'
 import { Routes, Route } from 'react-router-dom';
 import Navbar from './Navbar/Navbar.jsx'
 import MusicBar from './MusicBar/MusicBar.jsx'
@@ -13,6 +12,8 @@ function App() {
     <>
       <Navbar />
       <Routes>
+
+        {/* Requirement 1 fulfilled */}
         <Route path="/" element={<MusicMixer/>}/>
         <Route path="/Playlists" element={<Playlists/>}/>
         <Route path="/About" element={<About/>}/>

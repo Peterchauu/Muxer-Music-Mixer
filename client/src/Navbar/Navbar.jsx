@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from "react-router-dom"
 import musicMuxerLogo from '../assets/music_muxere_png.png'
 import { useAuth } from '../context/AuthContext'; 
@@ -49,6 +49,10 @@ const Navbar = () => {
                 
                 <ul className="flex space-x-16">
                     <li><Link to="/" className="font-mono font-bold text-lg text-gray-300 hover:text-blue-400 transition-colors duration-200 tracking-wide px-6 py-3 rounded-lg hover:bg-blue-950/50">Music Mixer</Link></li>
+
+
+                    {/* Requirement 13 fulfilled */}
+
                     <li><Link to="/Playlists" className="font-mono font-bold text-lg text-gray-300 hover:text-blue-400 transition-colors duration-200 tracking-wide px-6 py-3 rounded-lg hover:bg-blue-950/50">Playlists</Link></li>
                     <li><Link to="/About" className="font-mono font-bold text-lg text-gray-300 hover:text-blue-400 transition-colors duration-200 tracking-wide px-6 py-3 rounded-lg hover:bg-blue-950/50">About</Link></li>
                 </ul>
@@ -57,7 +61,6 @@ const Navbar = () => {
                     {/* Logic to swap buttons */}
                     {currentUser ? (
                         <>
-                            {/* Optional: Show user's name */}
                             <span className="text-sm font-semibold hidden md:inline-block text-blue-400">
                                 {currentUser.displayName || "User"}
                             </span>
@@ -70,7 +73,11 @@ const Navbar = () => {
                         </>
                     ) : (
                         <>
+
+                            {/* Requirement 3 fulfilled (1/2) */}
                             <Link to="/Sign In" className="hover:text-blue-400 transition-colors duration-200">Sign In</Link>
+
+                            {/* Requirement 2 fulfilled (1/2) */}
                             <Link to="/Register" className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-lg border border-blue-600/50 hover:bg-blue-600 hover:text-white font-bold transition-all">Register</Link>
                         </>
                     )}
