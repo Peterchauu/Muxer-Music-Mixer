@@ -8,11 +8,10 @@ import TrackCard from '../components/TrackCard';
 import playIcon from '../assets/play-solid-full.svg';
 import pauseIcon from '../assets/pause-solid-full.svg';
 
-// Helper for backend URL
+
 const SERVER_URL = "http://localhost:8080";
 
 function MusicMixer() {
-  // --- ORIGINAL STATE VARIABLES ---
   const [searchQuery, setSearchQuery] = useState('');
   const [tracks, setTracks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +32,6 @@ function MusicMixer() {
   const [trackData, setTrackData] = useState({});
   const [flippedCards, setFlippedCards] = useState([]);
   
-  // Finalize modal state
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [mixTitle, setMixTitle] = useState('');
   const [selectedPlaylist, setSelectedPlaylist] = useState('');
@@ -42,7 +40,7 @@ function MusicMixer() {
 
   const { currentTrack, isPlaying, playFromQueue, showMusicBar } = useAudio();
 
-  // --- MIXER STATE FROM CONTEXT ---
+  // --- load MIXER state from context ---
   const {
     mixerSlotA,
     setMixerSlotA,
@@ -66,7 +64,7 @@ function MusicMixer() {
   const [isProcessingB, setIsProcessingB] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // --- MIXER LOGIC ---
+  // --- Mixer Logic ---
 
   const loadIntoMixer = async (track, slot) => {
     // Use preview URL or full URL if available

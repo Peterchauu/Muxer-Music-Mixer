@@ -20,7 +20,7 @@ A web-based music mixing application with AI-powered stem separation and BPM syn
 **Backend:**
 - FastAPI (Python)
 - Demucs for stem separation
-- RubberBand + pyrubberband for pitch-preserving time-stretching
+- RubberBand for pitch-preserving time-stretching
 - Librosa for BPM detection
 
 ## Setup Instructions
@@ -88,7 +88,7 @@ npm run dev
 
 ## Important Notes
 
-- **RubberBand Setup**: The `setup_rubberband.ps1` script must be run on first setup to download the RubberBand library
+library
 - The server automatically configures the PATH to use RubberBand during runtime
 - Stem separation happens server-side and may take 30-60 seconds per song
 - Temporary stems are stored in `server/temp_stems/`
