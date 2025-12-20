@@ -21,6 +21,7 @@ A web-based music mixing application with AI-powered stem separation and BPM syn
 - FastAPI (Python)
 - Demucs for stem separation
 - RubberBand for pitch-preserving time-stretching
+- Pydubs for overlaying the stems to create mix
 - Librosa for BPM detection
 
 ## Setup Instructions
