@@ -14,8 +14,6 @@ STEMS_DIR = (BASE_DIR / ".." / "temp_stems").resolve()
 STEMS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-
-
 app = FastAPI()
 
 # CORS configuration
@@ -30,7 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
 
 
 # Routers
@@ -48,8 +45,6 @@ async def health_check():
 
 # Serve generated stems (Option B)
 app.mount("/stems", StaticFiles(directory=STEMS_DIR), name="stems")
-
-
 
 
 

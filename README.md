@@ -48,20 +48,14 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-4. **Install RubberBand library** (required for BPM sync):
+4. Start the backend server:
 ```bash
-.\setup_rubberband.ps1
-```
-This script will download and configure the RubberBand library needed for pitch-preserving time-stretching.
-
-5. Start the backend server:
-```bash
-python -m uvicorn app.main:app --reload --port 8080
+python -m app.main
 ```
 
 ### Frontend Setup
 
-1. Navigate to the client directory:
+1. Open up a new CLI terminal (while keeping the backend server running) and navigate to the client directory:
 ```bash
 cd client
 ```
@@ -84,7 +78,7 @@ npm run dev
 2. Load songs into Deck A (vocals) and Deck B (instrumental)
 3. The app will automatically separate stems using DEMUCS 
 4. Use the "Auto-Sync BPM" button to match tempos with minimal pitch distortion
-5. Adjust offset, volume, and other parameters to create your mix
+5. Adjust offset to create your mix, with access to standard media controls (volume, skip, play/pause)
 
 ## Important Notes
 
